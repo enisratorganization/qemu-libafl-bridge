@@ -7,6 +7,7 @@
 
 #include "cpu.h"
 #include "libafl/cpu.h"
+#include "libafl/instrument.h"
 
 #ifdef CONFIG_USER_ONLY
 #define THREAD_MODIFIER __thread
@@ -14,38 +15,22 @@
 #define THREAD_MODIFIER
 #endif
 
-struct libafl_breakpoint* libafl_qemu_breakpoints = NULL;
+
+bool libafl_exit_request_breakpoint_cb(CPUState *cpu, vaddr pc, void *opaque){
+    libafl_exit_request_breakpoint(cpu, pc);
+    return false;
+}
 
 int libafl_qemu_set_breakpoint(target_ulong pc)
 {
-    CPUState* cpu;
-
-    CPU_FOREACH(cpu) { libafl_breakpoint_invalidate(cpu, pc); }
-
-    struct libafl_breakpoint* bp = calloc(sizeof(struct libafl_breakpoint), 1);
-    bp->addr = pc;
-    bp->next = libafl_qemu_breakpoints;
-    libafl_qemu_breakpoints = bp;
+    add_instrument(pc, -1, libafl_exit_request_breakpoint_cb, NULL);
     return 1;
 }
 
 int libafl_qemu_remove_breakpoint(target_ulong pc)
 {
-    CPUState* cpu;
-    int r = 0;
-
-    struct libafl_breakpoint** bp = &libafl_qemu_breakpoints;
-    while (*bp) {
-        if ((*bp)->addr == pc) {
-            CPU_FOREACH(cpu) { libafl_breakpoint_invalidate(cpu, pc); }
-
-            *bp = (*bp)->next;
-            r = 1;
-        } else {
-            bp = &(*bp)->next;
-        }
-    }
-    return r;
+    remove_instrument(pc, -1);
+    return 1;
 }
 
 static THREAD_MODIFIER struct libafl_exit_reason last_exit_reason;
@@ -160,6 +145,7 @@ struct libafl_exit_reason* libafl_get_exit_reason(void)
 
 void libafl_qemu_breakpoint_run(vaddr pc_next)
 {
+    #if 0
     struct libafl_breakpoint* bp = libafl_qemu_breakpoints;
     while (bp) {
         if (bp->addr == pc_next) {
@@ -168,4 +154,5 @@ void libafl_qemu_breakpoint_run(vaddr pc_next)
         }
         bp = bp->next;
     }
+    #endif
 }

@@ -42,6 +42,14 @@
 #include "internal-common.h"
 #include "internal-target.h"
 
+
+//// --- Begin LibAFL code ---
+
+#include "libafl/instrument.h"
+#include "libafl/exit.h"
+
+//// --- End LibAFL code ---
+
 /* -icount align implementation. */
 
 typedef struct SyncClocks {
@@ -416,6 +424,10 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
     cpu->neg.can_do_io = true;
     cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
 
+    //// --- Begin LibAFL code ---
+    libafl_reset_last_instrument_state(cpu, pc);
+    //// --- End LibAFL code ---
+
     cflags = curr_cflags(cpu);
     if (check_for_breakpoints(cpu, pc, &cflags)) {
         cpu_loop_exit(cpu);
@@ -708,11 +720,6 @@ static inline void cpu_handle_debug_exception(CPUState *cpu)
     }
 }
 
-//// --- Begin LibAFL code ---
-
-#include "libafl/exit.h"
-
-//// --- End LibAFL code ---
 
 static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
 {
@@ -991,6 +998,11 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
             uint32_t flags, cflags;
 
             cpu_get_tb_cpu_state(cpu_env(cpu), &pc, &cs_base, &flags);
+
+
+            //// --- Begin LibAFL code ---
+            libafl_reset_last_instrument_state(cpu, pc);
+            //// --- End LibAFL code ---
 
             /*
              * When requested, use an exact setting for cflags for the next

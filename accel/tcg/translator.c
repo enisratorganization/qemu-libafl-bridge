@@ -105,6 +105,7 @@ static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
 //// --- Begin LibAFL code ---
 
 #include "libafl/exit.h"
+#include "libafl/instrument.h"
 #include "libafl/hook.h"
 
 #include "libafl/hooks/tcg/instruction.h"
@@ -181,6 +182,22 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 
         libafl_gen_cur_pc = db->pc_next;
         libafl_qemu_breakpoint_run(libafl_gen_cur_pc);
+
+
+        /** INSTRUMENT
+         * Make sure the call to our helper is always first in a TB
+         */
+        if( check_instrument(db->pc_next, cpu->cpu_index)) {
+            if( db->pc_next == db->pc_first ){
+                gen_helper_libafl_qemu_handle_instrument(tcg_env);
+                if (tcg_ctx->exitreq_label == NULL) {
+                    /* This trick will leave the TB with TB_EXIT_REQUESTED -> Thus no TB chaining will happen */
+                    tcg_ctx->exitreq_label = gen_new_label();
+                }
+            } else {
+                break;
+            }
+        };
 
         // 0x0f, 0x3a, 0xf2, 0x44
         uint8_t backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next);
