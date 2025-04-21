@@ -134,6 +134,7 @@
 #include "sysemu/iothread.h"
 #include "qemu/guest-random.h"
 #include "qemu/keyval.h"
+#include "exec/coverage.h"
 
 #define MAX_VIRTIO_CONSOLES 1
 
@@ -2745,6 +2746,9 @@ void qmp_x_exit_preconfig(Error **errp)
     } else if (autostart) {
         qmp_cont(NULL);
     }
+
+    qemu_opts_foreach(qemu_find_opts("covrec"),
+                      init_coverage_recording, NULL, &error_fatal);
 }
 
 void qemu_init(int argc, char **argv)
@@ -3640,6 +3644,13 @@ void qemu_init(int argc, char **argv)
             }
 #endif /* CONFIG_POSIX */
 
+            case QEMU_OPTION_covrec:
+                opts = qemu_opts_parse_noisily(qemu_find_opts("covrec"), optarg,
+                                               false);
+                if (!opts) {
+                    exit(1);
+                }
+                break;
             default:
                 error_report("Option not supported in this build");
                 exit(1);

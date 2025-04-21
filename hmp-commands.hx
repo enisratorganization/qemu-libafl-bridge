@@ -1861,6 +1861,7 @@ ERST
 #endif
 
 
+
     {
         .name       = "syx-snapshot-new",
         .args_type  = "",
@@ -1873,6 +1874,7 @@ SRST
 ``syx-snapshot-new``
   Create a new snapshot with tracking enabled, using DEVICE_SNAPSHOT_ALL.
 ERST
+
 
     {
         .name       = "syx-snapshot-root-restore",
@@ -1887,6 +1889,7 @@ SRST
   Restore the root snapshot stored in the static variable.
 ERST
 
+
     {
         .name       = "syx-snapshot-init",
         .args_type  = "",
@@ -1898,4 +1901,56 @@ ERST
 SRST
 ``syx-snapshot-identified``
   Init syx.
+ERST
+
+
+/**
+* Commands for coverage recording
+*/
+    {
+        .name       = "covrec_dump_edge_buf",
+        .args_type  = "cpu:i",
+        .params     = "cpu",
+        .help       = "Dump edge record buffer of vCPU",
+        .cmd        = hmp_covrec_dump_edge_buf,
+    },
+
+SRST
+``covrec_dump_edge_buf`` *cpu*
+ERST
+
+    {
+        .name       = "covrec_dump_comp_buf",
+        .args_type  = "cpu:i",
+        .params     = "cpu",
+        .help       = "Dump compare record buffer of vCPU",
+        .cmd        = hmp_covrec_dump_comp_buf,
+    },
+
+SRST
+``covrec_dump_comp_buf`` *cpu*
+ERST
+
+    {
+        .name       = "covrec_set_edge_enabled",
+        .args_type  = "cpu:i,enabled:i",
+        .params     = "cpu,enabled",
+        .help       = "Enable/Disable edge recording of vCPU",
+        .cmd        = hmp_covrec_set_edge_enabled
+    },
+
+SRST
+``covrec_set_edge_enabled`` *cpu* *enabled*
+ERST
+
+    {
+        .name       = "covrec_is_enabled_edge",
+        .args_type  = "cpu:i",
+        .params     = "cpu",
+        .help       = "Print if edge recording of vCPU is enabled",
+        .cmd        = hmp_covrec_is_enabled_edge
+    },
+
+SRST
+``covrec_is_enabled_edge`` *cpu*
 ERST

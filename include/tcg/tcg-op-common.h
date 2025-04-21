@@ -11,6 +11,7 @@
 #include "tcg/tcg.h"
 #include "exec/helper-proto-common.h"
 #include "exec/helper-gen-common.h"
+#include "tcg/coverage-tcg.h"
 
 TCGv_i32 tcg_constant_i32(int32_t val);
 TCGv_i64 tcg_constant_i64(int64_t val);
@@ -464,6 +465,7 @@ void tcg_gen_cmpsel_vec(TCGCond cond, unsigned vece, TCGv_vec r,
 void tcg_gen_ld_vec(TCGv_vec r, TCGv_ptr base, TCGArg offset);
 void tcg_gen_st_vec(TCGv_vec r, TCGv_ptr base, TCGArg offset);
 void tcg_gen_stl_vec(TCGv_vec r, TCGv_ptr base, TCGArg offset, TCGType t);
+
 
 /* Host pointer ops */
 

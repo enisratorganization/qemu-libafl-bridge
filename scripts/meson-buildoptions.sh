@@ -84,7 +84,7 @@ meson_options_help() {
   printf "%s\n" '                           (can be empty) [qemu]'
   printf "%s\n" '  --with-trace-file=VALUE  Trace file prefix for simple backend [trace]'
   printf "%s\n" '  --x86-version=CHOICE     tweak required x86_64 architecture version beyond'
-  printf "%s\n" '                           compiler default [1] (choices: 0/1/2/3/4)'
+  printf "%s\n" '                           compiler default [2] (choices: 0/1/2/3/4)'
   printf "%s\n" ''
   printf "%s\n" 'Optional features, enabled with --enable-FEATURE and'
   printf "%s\n" 'disabled with --disable-FEATURE, default is enabled if available'
