@@ -76,7 +76,7 @@ static bool read_chunk_from_cache_layer_device(SyxCowCacheDevice* sccd,
 
     // cache hit
     if (found) {
-        printf("[SYX] cached chunk found: %llx %lx\n", blk_offset, g_array_get_element_size(sccd->data));
+        //printf("[SYX] cached chunk found: %llx %lx\n", blk_offset, g_array_get_element_size(sccd->data));
         void* data_position_ptr =
             g_array_element_ptr(sccd->data, GPOINTER_TO_UINT(data_position));
         assert(qemu_iovec_from_buf(qiov, qiov_offset, data_position_ptr,

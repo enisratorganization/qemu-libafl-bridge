@@ -6,6 +6,7 @@ specific_ss.add(files(
                     'utils.c',
                     'gdb.c',
                     'instrument.c',
+                    'coverage-recording.c',
 
                     # TCG-related hooks
                     'hooks/tcg/backdoor.c',
