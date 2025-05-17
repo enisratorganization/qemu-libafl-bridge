@@ -15,6 +15,8 @@
 #include "crypto/hash.h"
 #include "qemu/log.h"
 
+#include "exec/coverage.h"
+
 
 static bool retN(CPUState *cs, vaddr pc, void *opaque)
 {
@@ -139,4 +141,9 @@ void sbl1_instrument()
     add_instrument(0x1483706C, -1, retN, 0); // boot_clock_init_rpm
     add_instrument(0x1482C4B8, -1, ddr_initialize_info, NULL); // boot_ddr_initialize_device
     add_instrument(0x1482D004, -1, retN, 0); // ddr_post_init
+
+    add_instrument(0x14864170, -1, disable_edge_coverage_single_cpu, 0); //otherwise leads to unstable LibAFL!
+    add_instrument(0x148642CC, -1, enable_edge_coverage_single_cpu, 0);
+    add_instrument(0x148634A0, -1, disable_edge_coverage_single_cpu, 0);
+    add_instrument(0x148636C0, -1, enable_edge_coverage_single_cpu, 0);
 }

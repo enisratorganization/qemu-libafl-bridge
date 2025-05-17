@@ -61,16 +61,16 @@ typedef struct {
  * Enabling and disabling coverage recording can be used from any thread and is done via atomic write.
  * en/disabling for all vCPUs at once should be done while machine is stopped.
  */
-void enable_edge_coverage_single_cpu(CoverageRecordBufs* buf);
-void disable_edge_coverage_single_cpu(CoverageRecordBufs* buf); 
-void enable_comp_coverage_single_cpu(CoverageRecordBufs* buf);
-void disable_comp_coverage_single_cpu(CoverageRecordBufs* buf);
+void enable_edge_coverage_single_cpu(CPUState* cpu);
+void disable_edge_coverage_single_cpu(CPUState* cpu); 
+void enable_comp_coverage_single_cpu(CPUState* cpu);
+void disable_comp_coverage_single_cpu(CPUState* cpu);
 void enable_edge_coverage_all_cpus(void);
 void disable_edge_coverage_all_cpus(void);
 void enable_comp_coverage_all_cpus(void);
 void disable_comp_coverage_all_cpus(void);
 
-void reset_edge_coverage_single_cpu(CoverageRecordBufs* buf);
-void reset_comp_coverage_single_cpu(CoverageRecordBufs* buf);
+void reset_edge_coverage_single_cpu(CPUState* cpu);
+void reset_comp_coverage_single_cpu(CPUState* cpu);
 
 #endif // COVERAGE_H
