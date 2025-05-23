@@ -40,13 +40,20 @@ typedef struct RCUCloseFILE {
 /* Mutex covering the other global_* variables. */
 static QemuMutex global_mutex;
 static char *global_filename;
-static FILE *global_file;
+FILE *global_file;
 static __thread FILE *thread_file;
 static __thread Notifier qemu_log_thread_cleanup_notifier;
 
 int qemu_loglevel;
 static bool log_per_thread;
 static GArray *debug_regions;
+
+void change_log_file(const char *fn) {
+    if(global_file)
+        fclose(global_file);
+    global_file = fopen(fn, "w");
+};
+
 
 /* Returns true if qemu_log() will really write somewhere. */
 bool qemu_log_enabled(void)

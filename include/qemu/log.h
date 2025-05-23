@@ -4,6 +4,9 @@
 /* A small part of this API is split into its own header */
 #include "qemu/log-for-trace.h"
 
+extern FILE *global_file;
+void change_log_file(const char *fn);
+
 /* 
  * The new API:
  */
