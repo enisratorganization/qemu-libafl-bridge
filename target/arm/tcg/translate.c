@@ -27,6 +27,7 @@
 #include "semihosting/semihost.h"
 #include "cpregs.h"
 #include "exec/helper-proto.h"
+#include "coverage-arm.h"
 
 #define HELPER_H "helper.h"
 #include "exec/helper-info.c.inc"
@@ -789,18 +790,8 @@ void arm_test_cc(DisasContext *s, DisasCompare *cmp, int cc)
         abort();
     }
 
-
     /* now record the edge */
-    if(s->aarch64){
-        TCGv_i64 pc_here = tcg_temp_new_i64();
-        /* update pc to current program address to make coverage deterministic */
-        tcg_gen_addi_i64(pc_here, cpu_pc, (s->pc_curr - s->pc_save));
-        tcg_gen_rec_edge_i64(pc_here, edge_id);
-    } else {
-        TCGv_i32 pc_here = tcg_temp_new_i32();
-        /* @TODO implement */
-    }
-
+    arm_tcg_gen_rec_edge(s, cpu_pc, edge_id);
 
     if (cc & 1) {
         cond = tcg_invert_cond(cond);
