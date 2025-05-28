@@ -11,7 +11,6 @@
 #include "tcg/tcg.h"
 #include "exec/helper-proto-common.h"
 #include "exec/helper-gen-common.h"
-#include "tcg/coverage-tcg.h"
 
 TCGv_i32 tcg_constant_i32(int32_t val);
 TCGv_i64 tcg_constant_i64(int64_t val);

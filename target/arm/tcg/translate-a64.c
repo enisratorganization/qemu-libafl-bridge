@@ -25,6 +25,7 @@
 #include "arm_ldst.h"
 #include "semihosting/semihost.h"
 #include "cpregs.h"
+#include "coverage-arm.h"
 
 static TCGv_i64 cpu_X[32];
 /*static*/ TCGv_i64 cpu_pc;
@@ -1458,7 +1459,7 @@ static bool trans_CBZ(DisasContext *s, arg_cbz *a)
 
     tcg_cmp = read_cpu_reg(s, a->rt, a->sf);
     tcg_gen_setcondi_i64(TCG_COND_NE, tcg_cmp, tcg_cmp, 0);
-    tcg_gen_rec_edge_i64(cpu_pc, tcg_cmp);  /* EDGE COVERAGE */
+    arm_tcg_gen_rec_edge(s, cpu_pc, tcg_cmp);  /* EDGE COVERAGE */
     reset_btype(s);
 
     match = gen_disas_label(s);
@@ -1478,7 +1479,7 @@ static bool trans_TBZ(DisasContext *s, arg_tbz *a)
     tcg_cmp = tcg_temp_new_i64();
     tcg_gen_andi_i64(tcg_cmp, cpu_reg(s, a->rt), 1ULL << a->bitpos);
     tcg_gen_shri_i64(tcg_cmp, tcg_cmp, a->bitpos);
-    tcg_gen_rec_edge_i64(cpu_pc, tcg_cmp);  /* EDGE COVERAGE */
+    arm_tcg_gen_rec_edge(s, cpu_pc, tcg_cmp);  /* EDGE COVERAGE */
 
     reset_btype(s);
 
@@ -1538,9 +1539,7 @@ static void set_btype_for_blr(DisasContext *s)
 static bool trans_BR(DisasContext *s, arg_r *a)
 {
     /*EDGE COVERAGE*/
-    TCGv_i64 pc_here = tcg_temp_new_i64();
-    tcg_gen_addi_i64(pc_here, cpu_pc, (s->pc_curr - s->pc_save));
-    tcg_gen_rec_edge_i64(pc_here, cpu_reg(s, a->rn));
+    arm_tcg_gen_rec_edge(s, cpu_pc, cpu_reg(s, a->rn));
 
     set_btype_for_br(s, a->rn);
     gen_a64_set_pc(s, cpu_reg(s, a->rn));
@@ -1560,7 +1559,7 @@ static bool trans_BLR(DisasContext *s, arg_r *a)
     gen_pc_plus_diff(s, lr, curr_insn_len(s));
 
     /*EDGE COVERAGE*/
-    /*Save one insn: use LR=PC+4 instead of actual PC*/
+    /*Save one insn and not call arm_tcg_gen_rec_edge; use LR=PC+4 instead of actual PC*/
     tcg_gen_rec_edge_i64(lr, dst); 
     
     gen_a64_set_pc(s, dst);
@@ -1608,7 +1607,7 @@ static bool trans_BRAZ(DisasContext *s, arg_braz *a)
 
     dst = auth_branch_target(s, cpu_reg(s, a->rn), tcg_constant_i64(0), !a->m);
     
-    tcg_gen_rec_edge_i64(cpu_pc, dst); /*EDGE COVERAGE*/
+    arm_tcg_gen_rec_edge(s, cpu_pc, dst); /*EDGE COVERAGE*/
     set_btype_for_br(s, a->rn);
     gen_a64_set_pc(s, dst);
     s->base.is_jmp = DISAS_JUMP;
@@ -1655,7 +1654,7 @@ static bool trans_BRA(DisasContext *s, arg_bra *a)
         return false;
     }
     dst = auth_branch_target(s, cpu_reg(s,a->rn), cpu_reg_sp(s, a->rm), !a->m);
-    tcg_gen_rec_edge_i64(cpu_pc, dst); /*EDGE COVERAGE*/
+    arm_tcg_gen_rec_edge(s, cpu_pc, dst); /*EDGE COVERAGE*/
     gen_a64_set_pc(s, dst);
     set_btype_for_br(s, a->rn);
     s->base.is_jmp = DISAS_JUMP;
