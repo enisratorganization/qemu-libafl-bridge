@@ -119,31 +119,107 @@ static bool ddr_initialize_info(CPUState *cs, vaddr pc, void *opaque)
     return true;
 }
 
-void sbl1_instrument()
+static bool debug_memcpy(CPUState *cs, vaddr pc, void *opaque)
 {
-    add_instrument(0x1485D5A8, -1, retN, 1); // a_lot_of_hw_init_sub_1485D5A8
-    add_instrument(0x148371F8, -1, retN, 0); // some PLL init??
-    add_instrument(0x1469F960, -1, retN, 1); // enable a PLL???
-    add_instrument(0x14864298, -1, ufs_overwrite_nonblocking, NULL); // Fix a BUG in XBL not waiting for UFS command completion
-    add_instrument(0x14850E30, -1, setX3_0, 0); // pmic_status = 0
-    add_instrument(0x14850E8C, -1, setX10_0, 0);
-    add_instrument(0x14850EAC, -1, setX0_0, 0);
-    add_instrument(0x1484ECBC, -1, setX0_0, 0); // pmic_driver_init
-    add_instrument(0x14850F34, -1, retN, 0); // usb_battery_check
-    add_instrument(0x14837364, -1, retN, 0); // DDR stuff
-    add_instrument(0x14837054, -1, retN, 1); // boot_pre_ddr_clock_initQQ 
-    add_instrument(0x14848254, -1, DALSysGetPropertyValue, NULL);
-    add_instrument(0x148243E8, -1, retN, 0); // do_ddr_training
-    add_instrument(0x148C0000, -1, retN, 0); // boot_ddi_entry
-    add_instrument(0x148245A8, -1, retN, 0); // sbl1_hw_init_secondary
-    add_instrument(0x14837368, -1, retN, 0); // boot_populate_cpr_settings for SMEM
-    add_instrument(0x14850D28, -1, setX0_0, 0); // pm_init_smem
-    add_instrument(0x1483706C, -1, retN, 0); // boot_clock_init_rpm
-    add_instrument(0x1482C4B8, -1, ddr_initialize_info, NULL); // boot_ddr_initialize_device
-    add_instrument(0x1482D004, -1, retN, 0); // ddr_post_init
-
-    add_instrument(0x14864170, -1, disable_edge_coverage_single_cpu, 0); //otherwise leads to unstable LibAFL!
-    add_instrument(0x148642CC, -1, enable_edge_coverage_single_cpu, 0);
-    add_instrument(0x148634A0, -1, disable_edge_coverage_single_cpu, 0);
-    add_instrument(0x148636C0, -1, enable_edge_coverage_single_cpu, 0);
+    ARMCPU *cpu = ARM_CPU(cs);
+    qemu_log_mask(LOG_TRACE, "MEMCPY 0x%llx 0x%llx %d\n", cpu->env.xregs[0], cpu->env.xregs[1], cpu->env.xregs[2]);
+    return false;
 }
+
+static size_t ufs_off = 0;
+static size_t ufs_sz = 0;
+static vaddr ufs_buf = 0;
+
+static bool debug_readufs_entry(CPUState *cs, vaddr pc, void *opaque)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    ufs_buf = cpu->env.xregs[1];
+    ufs_off = cpu->env.xregs[2];
+    ufs_sz = cpu->env.xregs[3];
+}
+
+static bool debug_readufs_done(CPUState *cs, vaddr pc, void *opaque)
+{
+    char *buf = malloc(ufs_sz);
+    cpu_memory_rw_debug(cs, ufs_buf, buf, ufs_sz, false);
+    qemu_log_mask(LOG_TRACE, "UFS read %d %d\n", ufs_off, ufs_sz);
+    FILE *f = qemu_log_trylock();
+    qemu_hexdump(f, "", buf, ufs_sz);
+    qemu_log_unlock(f);
+    free(buf);
+}
+
+static bool log_all_regs(CPUState *cs, vaddr pc, void *opaque)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    qemu_log_mask(LOG_TRACE, "REGDUMP 0x%llx\n", cpu->env.pc);
+    for (int i = 0; i < 31; i++){
+        qemu_log_mask(LOG_TRACE, "X%d: 0x%llx\n", i, cpu->env.xregs[i]);
+    }
+}
+
+static bool hook_14837274(CPUState *cs, vaddr pc, void *opaque)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    FILE *f = qemu_log_trylock();
+    char *buf = malloc(0x1000);
+
+    cpu_memory_rw_debug(cs, cpu->env.xregs[0], buf, 0x1000, false);
+    qemu_hexdump(f, "14837274 X0", buf, 0x1000);
+
+    cpu_memory_rw_debug(cs, cpu->env.xregs[3], buf, 0x1000, false);
+    qemu_hexdump(f, "14837274 X3", buf, 0x1000);
+    
+    qemu_log_unlock(f);
+    free(buf);
+}
+
+static bool hook_148352F4(CPUState *cs, vaddr pc, void *opaque)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    FILE *f = qemu_log_trylock();
+    char *buf = malloc(0x2000);
+    cpu_memory_rw_debug(cs, 0x14890000, buf, 0x2000, false);
+    qemu_hexdump(f, "14890000", buf, 0x2000);
+    qemu_log_unlock(f);
+    free(buf);
+}
+
+void sbl1_instrument()
+    {
+        add_instrument(0x1485D5A8, -1, retN, 1);                         // a_lot_of_hw_init_sub_1485D5A8
+        add_instrument(0x148371F8, -1, retN, 0);                         // some PLL init??
+        add_instrument(0x1469F960, -1, retN, 1);                         // enable a PLL???
+        add_instrument(0x14864298, -1, ufs_overwrite_nonblocking, NULL); // Fix a BUG in XBL not waiting for UFS command completion
+        add_instrument(0x14850E30, -1, setX3_0, 0);                      // pmic_status = 0
+        add_instrument(0x14850E8C, -1, setX10_0, 0);
+        add_instrument(0x14850EAC, -1, setX0_0, 0);
+        add_instrument(0x1484ECBC, -1, setX0_0, 0); // pmic_driver_init
+        add_instrument(0x14850F34, -1, retN, 0);    // usb_battery_check
+        add_instrument(0x14837364, -1, retN, 0);    // DDR stuff
+        add_instrument(0x14837054, -1, retN, 1);    // boot_pre_ddr_clock_initQQ
+        add_instrument(0x14848254, -1, DALSysGetPropertyValue, NULL);
+        add_instrument(0x148243E8, -1, retN, 0);                   // do_ddr_training
+        add_instrument(0x148C0000, -1, retN, 0);                   // boot_ddi_entry
+        add_instrument(0x148245A8, -1, retN, 0);                   // sbl1_hw_init_secondary
+        add_instrument(0x14837368, -1, retN, 0);                   // boot_populate_cpr_settings for SMEM
+        add_instrument(0x14850D28, -1, setX0_0, 0);                // pm_init_smem
+        add_instrument(0x1483706C, -1, retN, 0);                   // boot_clock_init_rpm
+        add_instrument(0x1482C4B8, -1, ddr_initialize_info, NULL); // boot_ddr_initialize_device
+        add_instrument(0x1482D004, -1, retN, 0);                   // ddr_post_init
+
+        add_instrument(0x14864170, -1, disable_edge_coverage_single_cpu, 0); // otherwise leads to unstable LibAFL!
+        add_instrument(0x148642CC, -1, enable_edge_coverage_single_cpu, 0);
+        add_instrument(0x148634A0, -1, disable_edge_coverage_single_cpu, 0);
+        add_instrument(0x148636C0, -1, enable_edge_coverage_single_cpu, 0);
+
+        add_instrument(0x14827DE8, -1, debug_memcpy, 0);
+
+        add_instrument(0x148332BC, -1, debug_readufs_entry, 0);
+        add_instrument(0x14833350, -1, debug_readufs_done, 0);
+
+        add_instrument(0x14833BC8, -1, log_all_regs, 0);
+        add_instrument(0x1484C1B8, -1, log_all_regs, 0);
+        //add_instrument(0x14837274, -1, hook_14837274, 0);
+        //add_instrument(0x148352F4, -1, hook_148352F4, 0);
+    }
