@@ -1,6 +1,9 @@
 /**
- * Skeleton of a SysBusDevice that compiles.
- * It allows for convenient and fast prototyping using Copy&Paste, Find&Replace + Coding LLMs
+ * QCOM CRYPTO0_CRYPTO_TOP
+ *  base ad:0x01dfa000
+ *  base ad:0x01dc4000
+ *  base ad:0x01dc1000
+ *  base ad:0x01dc0000
  */
 
 #include "qemu/osdep.h"
@@ -136,7 +139,7 @@ static void qcom_0x1dc0000_init(Object *obj)
     DeviceState *dev = DEVICE(obj);
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
 
-    memory_region_init_io(&s->mmio1, obj, &qcom_0x1dc0000_ops, s, "qcom_0x1dc0000_mmio1", 0x1000);
+    memory_region_init_io(&s->mmio1, obj, &qcom_0x1dc0000_ops, s, "qcom_0x1dc0000_mmio1", 0x40000);
     sysbus_init_mmio(sbd, &s->mmio1);
 
     for (int i = 0; i < NUM_GPIO_OUT; i++) { sysbus_init_irq(sbd, &s->out[i]); }

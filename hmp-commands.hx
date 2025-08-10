@@ -1939,9 +1939,11 @@ ERST
         .cmd        = hmp_covrec_set_edge_enabled
     },
 
+
 SRST
 ``covrec_set_edge_enabled`` *cpu* *enabled*
 ERST
+
 
     {
         .name       = "covrec_is_enabled_edge",
@@ -1953,4 +1955,17 @@ ERST
 
 SRST
 ``covrec_is_enabled_edge`` *cpu*
+ERST
+
+
+    {
+        .name       = "set_ignore_memory_transaction_failures",
+        .args_type  = "val:b",
+        .params     = "on|off",
+        .help       = "Set ignore memory transaction failures flag. If set to true, then the guest will not crash on memory transactions that fail",
+        .cmd        = hmp_set_ignore_memory_transaction_failures
+    },
+
+SRST
+``set_ignore_memory_transaction_failures`` *val*
 ERST

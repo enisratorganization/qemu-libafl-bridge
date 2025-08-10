@@ -26,6 +26,7 @@
 #include "qemu/log.h"
 #include "sysemu/sysemu.h"
 #include "chardev/char.h"
+#include "hw/misc/unimp.h"
 
 #define CPU_NAME "cortex-a53-arm-cpu"
 
@@ -171,6 +172,13 @@ static void redfin_init(MachineState * machine)
     sysbus_create_varargs("qcom_0xc230000", 0xc230000, NULL);
     sysbus_create_varargs("qcom_qtimer1", 0x17C20000, NULL);
     sysbus_create_varargs("qcom_0xc600000", 0xc600000, NULL);
+
+    o = qdev_new(TYPE_UNIMPLEMENTED_DEVICE);
+    qdev_prop_set_string(DEVICE(o), "name", "bla");
+    qdev_prop_set_uint64(DEVICE(o), "size", 0x1000);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(o), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(o), 0, 0x0c40a000);
+    
 
     o = qdev_new("qcom_qup");
     Chardev *chr = qemu_chr_find("qup");

@@ -11,6 +11,11 @@
 #include "exec/exec-all.h"
 #include "hw/core/sysemu-cpu-ops.h"
 
+#include "qapi/qmp/qdict.h"
+#include "monitor/hmp.h"
+#include "monitor/monitor.h"
+#include "monitor/hmp-target.h"
+
 #include "libafl/cpu.h"
 
 #include "libafl/exit.h"
@@ -157,6 +162,19 @@ void libafl_flush_jit(void)
 {
     CPUState* cpu;
     CPU_FOREACH(cpu) { tb_flush(cpu); }
+}
+
+void libafl_set_ignore_memory_transaction_failures(bool val) {
+    CPUState* cpu;
+    CPU_FOREACH(cpu) { cpu->ignore_memory_transaction_failures = val; }
+}
+
+void hmp_set_ignore_memory_transaction_failures(Monitor *mon, const QDict *qdict)
+{
+    Error *err = NULL;
+    bool val = qdict_get_bool(qdict, "val");
+
+    libafl_set_ignore_memory_transaction_failures(val);
 }
 
 #ifdef CONFIG_USER_ONLY

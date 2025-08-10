@@ -70,4 +70,6 @@ void hmp_covrec_dump_comp_buf(Monitor *mon, const QDict *qdict);
 void hmp_covrec_set_comp_enabled(Monitor *mon, const QDict *qdict);
 void hmp_covrec_is_enabled_comp(Monitor *mon, const QDict *qdict);
 
+void hmp_set_ignore_memory_transaction_failures(Monitor *mon, const QDict *qdict);
+
 #endif /* MONITOR_HMP_TARGET_H */
