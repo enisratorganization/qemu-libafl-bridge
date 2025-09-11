@@ -52,6 +52,7 @@ void tcg_gen_add_mem_idx_i64(TCGv_i64 base, TCGv_i64 index, TCGv_i64 val, int el
  * vCPU...edge hitmap[ CRC32(pc|out_edge_id) ] += 1
  */
 void tcg_gen_rec_edge_i64(TCGv_i64 pc, TCGv_i32 out_edge_id) {
+    //@TODO hacky: 32 and 64 bit temporaries assumed interchangeable (as in x86_64)!
     if(edge_coverage_record_tcg_enabled) {
         TCGv_i32 hashed = tcg_temp_new_i32();
         tcg_gen_mov_i32(hashed, out_edge_id);

@@ -27,6 +27,7 @@
 #include "semihosting/semihost.h"
 #include "cpregs.h"
 #include "exec/helper-proto.h"
+
 #include "coverage-arm.h"
 
 #define HELPER_H "helper.h"
@@ -57,7 +58,9 @@ static const char * const regnames[] =
       "r8", "r9", "r10", "r11", "r12", "r13", "r14", "pc" };
 
 
+#ifdef TARGET_AARCH64
 extern TCGv_i64 cpu_pc; //for edge coverage recording
+#endif
 
 /* initialize TCG globals.  */
 void arm_translate_init(void)
@@ -311,6 +314,12 @@ void store_reg(DisasContext *s, int reg, TCGv_i32 var)
          * We choose to ignore [1:0] in ARM mode for all architecture versions.
          */
         tcg_gen_andi_i32(var, var, s->thumb ? ~1 : ~3);
+
+        /*EDGE COVERAGE*/
+        if( !s->cov.src_var_is_LR )//exclude "ret" = "mov pc,lr" = "bx lr" insn
+            arm_tcg_gen_rec_edge(s, cpu_R[15], var);
+        s->cov.src_var_is_LR = false;
+
         s->base.is_jmp = DISAS_JUMP;
         s->pc_save = -1;
     } else if (reg == 13 && arm_dc_feature(s, ARM_FEATURE_M)) {
@@ -657,9 +666,8 @@ void arm_test_cc(DisasContext *s, DisasCompare *cmp, int cc)
      * in every edge id.
      */
     TCGv_i32 edge_id = tcg_temp_new_i32();
-
-    //conserves semantic  of ZF according to ZF definition
-    tcg_gen_setcondi_i32(TCG_COND_NE, cpu_ZF, cpu_ZF, 0); 
+    TCGv_i32 cpu_ZF_sb = tcg_temp_new_i32();
+    tcg_gen_setcondi_i32(TCG_COND_NE, cpu_ZF_sb, cpu_ZF, 0);  //cpu_ZF as single bit, only LSB 0|1
 
     switch (cc) {
     case 0: /* eq: Z */
@@ -667,7 +675,7 @@ void arm_test_cc(DisasContext *s, DisasCompare *cmp, int cc)
         cond = TCG_COND_EQ;
         value = cpu_ZF;
 
-        edge_id = cpu_ZF;
+        edge_id = cpu_ZF_sb;
         break;
 
     case 2: /* cs: C */
@@ -677,7 +685,7 @@ void arm_test_cc(DisasContext *s, DisasCompare *cmp, int cc)
 
         if (edge_coverage_record_cornercase) {
             tcg_gen_neg_i32(edge_id, cpu_CF);
-            tcg_gen_xor_i32(edge_id, edge_id, cpu_ZF);
+            tcg_gen_xor_i32(edge_id, edge_id, cpu_ZF_sb);
         } else {
             //tcg_temp_free_i32(edge_id);
             edge_id = cpu_CF;
@@ -694,7 +702,7 @@ void arm_test_cc(DisasContext *s, DisasCompare *cmp, int cc)
         //The result of TCG_COND_LT is equivalent 
         tcg_gen_sari_i32(value, value, 31);
         if (edge_coverage_record_cornercase) {            
-            tcg_gen_xor_i32(edge_id, cpu_ZF, value);
+            tcg_gen_xor_i32(edge_id, cpu_ZF_sb, value);
         } else {
 
             edge_id = value;
@@ -719,10 +727,10 @@ void arm_test_cc(DisasContext *s, DisasCompare *cmp, int cc)
            ZF is non-zero for !Z; so AND the two subexpressions.  */
         tcg_gen_neg_i32(value, cpu_CF);
         if(edge_coverage_record_cornercase) {
-            tcg_gen_xor_i32(edge_id, value, cpu_ZF);
+            tcg_gen_xor_i32(edge_id, value, cpu_ZF_sb);
         }
         
-        tcg_gen_and_i32(value, value, cpu_ZF);
+        tcg_gen_and_i32(value, value, cpu_ZF_sb);
         
         if(!edge_coverage_record_cornercase) {
             edge_id = value;
@@ -742,7 +750,7 @@ void arm_test_cc(DisasContext *s, DisasCompare *cmp, int cc)
         if (edge_coverage_record_cornercase)
         {
             // aditionally we are interested in ZF here to record the corner case "equal"
-            tcg_gen_xor_i32(edge_id, cpu_ZF, value);// edge_id = (NF^VF) ... (NF^VF)(NF^VF^ZF)
+            tcg_gen_xor_i32(edge_id, cpu_ZF_sb, value);// edge_id = (NF^VF) ... (NF^VF)(NF^VF^ZF)
         } else {
             edge_id = value;
         }
@@ -760,14 +768,14 @@ void arm_test_cc(DisasContext *s, DisasCompare *cmp, int cc)
         {
             tcg_gen_xor_i32(value, cpu_VF, cpu_NF);
             tcg_gen_sari_i32(value, value, 31);
-            tcg_gen_xor_i32(edge_id, cpu_ZF, value); // edge_id = (NF^VF) ... (NF^VF)(NF^VF^ZF)
-            tcg_gen_andc_i32(value, cpu_ZF, value);
+            tcg_gen_xor_i32(edge_id, cpu_ZF_sb, value); // edge_id = (NF^VF) ... (NF^VF)(NF^VF^ZF)
+            tcg_gen_andc_i32(value, cpu_ZF_sb, value);
         }
         else
         {
             tcg_gen_xor_i32(value, cpu_VF, cpu_NF);
             tcg_gen_sari_i32(value, value, 31);
-            tcg_gen_andc_i32(value, cpu_ZF, value);
+            tcg_gen_andc_i32(value, cpu_ZF_sb, value);
             edge_id = value;
         }
         /* orig:
@@ -791,7 +799,20 @@ void arm_test_cc(DisasContext *s, DisasCompare *cmp, int cc)
     }
 
     /* now record the edge */
-    arm_tcg_gen_rec_edge(s, cpu_pc, edge_id);
+    
+    #ifdef TARGET_AARCH64
+    if(s->aarch64){
+        arm_tcg_gen_rec_edge(s, cpu_pc, edge_id);
+    } else{
+    #endif
+        TCGOp *start_op = tcg_last_op();    
+        arm_tcg_gen_rec_edge(s, cpu_R[15], edge_id);    
+        TCGOp *end_op = tcg_last_op(); 
+        // see if we can optimize code output by removing the ops of last conditional insn
+        arm_tcg_cc_recording_check_and_remove(s, 0b11 << (cc & 0xfe), start_op, end_op);
+    #ifdef TARGET_AARCH64
+    }
+    #endif
 
     if (cc & 1) {
         cond = tcg_invert_cond(cond);
@@ -832,6 +853,11 @@ void gen_update_pc(DisasContext *s, target_long diff)
 /* Set PC and Thumb state from var.  var is marked as dead.  */
 static inline void gen_bx(DisasContext *s, TCGv_i32 var)
 {
+    /*EDGE COVERAGE*/
+    if( !s->cov.src_var_is_LR )//exclude "ret" = "mov pc,lr" = "bx lr" insn
+        arm_tcg_gen_rec_edge(s, cpu_R[15], var);
+    s->cov.src_var_is_LR = false;
+
     s->base.is_jmp = DISAS_JUMP;
     tcg_gen_andi_i32(cpu_R[15], var, ~1);
     tcg_gen_andi_i32(var, var, 1);
@@ -3813,6 +3839,7 @@ static bool op_s_rrr_shi(DisasContext *s, arg_s_rrr_shi *a,
     gen(tmp1, tmp1, tmp2);
 
     if (logic_cc) {
+        arm_tcg_cc_recording_reset(s);
         gen_logic_CC(tmp1);
     }
     return store_reg_kind(s, a->rd, tmp1, kind);
@@ -3824,11 +3851,15 @@ static bool op_s_rxr_shi(DisasContext *s, arg_s_rrr_shi *a,
 {
     TCGv_i32 tmp;
 
+    /* Probably "mov pc, lr", which we would like to exclude from coverage recording */
+    s->cov.src_var_is_LR = ( a->rm == 14 && a->shty == 0 && a->shim == 0 );
+
     tmp = load_reg(s, a->rm);
     gen_arm_shift_im(tmp, a->shty, a->shim, logic_cc);
 
     gen(tmp, tmp);
     if (logic_cc) {
+        arm_tcg_cc_recording_reset(s);
         gen_logic_CC(tmp);
     }
     return store_reg_kind(s, a->rd, tmp, kind);
@@ -3854,6 +3885,7 @@ static bool op_s_rrr_shr(DisasContext *s, arg_s_rrr_shr *a,
     gen(tmp1, tmp1, tmp2);
 
     if (logic_cc) {
+        arm_tcg_cc_recording_reset(s);
         gen_logic_CC(tmp1);
     }
     return store_reg_kind(s, a->rd, tmp1, kind);
@@ -3871,6 +3903,7 @@ static bool op_s_rxr_shr(DisasContext *s, arg_s_rrr_shr *a,
 
     gen(tmp2, tmp2);
     if (logic_cc) {
+        arm_tcg_cc_recording_reset(s);
         gen_logic_CC(tmp2);
     }
     return store_reg_kind(s, a->rd, tmp2, kind);
@@ -3918,6 +3951,7 @@ static bool op_s_rri_rot(DisasContext *s, arg_s_rri_rot *a,
     gen(tmp1, tmp1, tcg_constant_i32(imm));
 
     if (logic_cc) {
+        arm_tcg_cc_recording_reset(s);
         gen_logic_CC(tmp1);
     }
     return store_reg_kind(s, a->rd, tmp1, kind);
@@ -3939,6 +3973,7 @@ static bool op_s_rxi_rot(DisasContext *s, arg_s_rri_rot *a,
     gen(tmp, tcg_constant_i32(imm));
 
     if (logic_cc) {
+        arm_tcg_cc_recording_reset(s);
         gen_logic_CC(tmp);
     }
     return store_reg_kind(s, a->rd, tmp, kind);
@@ -3973,17 +4008,20 @@ DO_ANY3(EOR, tcg_gen_xor_i32, a->s, STREG_NORMAL)
 DO_ANY3(ORR, tcg_gen_or_i32, a->s, STREG_NORMAL)
 DO_ANY3(BIC, tcg_gen_andc_i32, a->s, STREG_NORMAL)
 
-DO_ANY3(RSB, a->s ? gen_rsb_CC : gen_rsb, false, STREG_NORMAL)
-DO_ANY3(ADC, a->s ? gen_adc_CC : gen_add_carry, false, STREG_NORMAL)
-DO_ANY3(SBC, a->s ? gen_sbc_CC : gen_sub_carry, false, STREG_NORMAL)
-DO_ANY3(RSC, a->s ? gen_rsc_CC : gen_rsc, false, STREG_NORMAL)
+//For efficient edge coverage recording of ARM conditional insns
+#define WITH_CC_REC(OP) (arm_tcg_cc_recording_reset(s), OP)
+
+DO_ANY3(RSB, a->s ? WITH_CC_REC(gen_rsb_CC) : gen_rsb, false, STREG_NORMAL)
+DO_ANY3(ADC, a->s ? WITH_CC_REC(gen_adc_CC) : gen_add_carry, false, STREG_NORMAL)
+DO_ANY3(SBC, a->s ? WITH_CC_REC(gen_sbc_CC) : gen_sub_carry, false, STREG_NORMAL)
+DO_ANY3(RSC, a->s ? WITH_CC_REC(gen_rsc_CC) : gen_rsc, false, STREG_NORMAL)
 
 DO_CMP2(TST, tcg_gen_and_i32, true)
 DO_CMP2(TEQ, tcg_gen_xor_i32, true)
-DO_CMP2(CMN, gen_add_CC, false)
-DO_CMP2(CMP, gen_sub_CC, false)
+DO_CMP2(CMN, WITH_CC_REC(gen_add_CC), false)
+DO_CMP2(CMP, WITH_CC_REC(gen_sub_CC), false)
 
-DO_ANY3(ADD, a->s ? gen_add_CC : tcg_gen_add_i32, false,
+DO_ANY3(ADD, a->s ? WITH_CC_REC(gen_add_CC) : tcg_gen_add_i32, false,
         a->rd == 13 && a->rn == 13 ? STREG_SP_CHECK : STREG_NORMAL)
 
 /*
@@ -3991,7 +4029,7 @@ DO_ANY3(ADD, a->s ? gen_add_CC : tcg_gen_add_i32, false,
  * middle of the functions that are expanded by DO_ANY3, and that
  * we modify a->s via that parameter before it is used by OP.
  */
-DO_ANY3(SUB, a->s ? gen_sub_CC : tcg_gen_sub_i32, false,
+DO_ANY3(SUB, a->s ? WITH_CC_REC(gen_sub_CC) : tcg_gen_sub_i32, false,
         ({
             StoreRegKind ret = STREG_NORMAL;
             if (a->rd == 15 && a->s) {
@@ -4341,6 +4379,7 @@ static bool op_mla(DisasContext *s, arg_s_rrrr *a, bool add)
         tcg_gen_add_i32(t1, t1, t2);
     }
     if (a->s) {
+        arm_tcg_cc_recording_reset(s);
         gen_logic_CC(t1);
     }
     store_reg(s, a->rd, t1);
@@ -4390,6 +4429,7 @@ static bool op_mlal(DisasContext *s, arg_s_rrrr *a, bool uns, bool add)
         tcg_gen_add2_i32(t0, t1, t0, t1, t2, t3);
     }
     if (a->s) {
+        arm_tcg_cc_recording_reset(s);
         gen_logicq_cc(t0, t1);
     }
     store_reg(s, a->ra, t0);
@@ -7739,6 +7779,8 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     cpu_V0 = tcg_temp_new_i64();
     cpu_V1 = tcg_temp_new_i64();
     cpu_M0 = tcg_temp_new_i64();
+
+    arm_tcg_cc_recording_reset(dc);
 }
 
 static void arm_tr_tb_start(DisasContextBase *dcbase, CPUState *cpu)

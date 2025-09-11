@@ -10,6 +10,8 @@
 #include "internals.h"
 #include "cpu-features.h"
 
+#include "coverage-arm-disascontext-ext.h"
+
 /* internal defines */
 
 /*
@@ -171,6 +173,13 @@ typedef struct DisasContext {
     int c15_cpar;
     /* Offset from VNCR_EL2 when FEAT_NV2 redirects this reg to memory */
     uint32_t nv2_redirect_offset;
+
+    /* For edge coverage recording */
+    /* For ARM guest code we need to keep track of additional 
+     * additional state during translation in order to efficiently record the CFG coverage
+     */
+    struct tcg_arm_edge_coverage cov;
+
 } DisasContext;
 
 typedef struct DisasCompare {

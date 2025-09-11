@@ -25,6 +25,7 @@
 #include "arm_ldst.h"
 #include "semihosting/semihost.h"
 #include "cpregs.h"
+
 #include "coverage-arm.h"
 
 static TCGv_i64 cpu_X[32];
@@ -12110,6 +12111,11 @@ static void aarch64_tr_init_disas_context(DisasContextBase *dcbase,
         bound = 1;
     }
     dc->base.max_insns = MIN(dc->base.max_insns, bound);
+
+    /* EDGE COVERAGE , for AARCH64 conditionals are not important.
+     * This means every usage of arm_text_cc() will be recorded
+     */
+    arm_tcg_cc_recording_reset(dc);
 }
 
 static void aarch64_tr_tb_start(DisasContextBase *db, CPUState *cpu)
