@@ -50,7 +50,7 @@ static Property devxyz_properties[] = {
     DEFINE_PROP_STRING("prop_str", devxyzState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", devxyzState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", devxyzState, prop_bool, 0),
-    DEFINE_PROP_END_OF_LIST(),
+    
 };
 
 /**
@@ -153,7 +153,7 @@ static void devxyz_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_devxyz;
     dc->realize = &devxyz_realize;
-    dc->reset = &devxyz_reset;
+    dc->legacy_reset = &devxyz_reset;
     device_class_set_props(dc, devxyz_properties);
 }
 

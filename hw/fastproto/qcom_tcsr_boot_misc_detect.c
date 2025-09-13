@@ -50,7 +50,7 @@ static Property qcom_tcsr_boot_misc_detect_properties[] = {
     DEFINE_PROP_STRING("prop_str", qcom_tcsr_boot_misc_detectState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", qcom_tcsr_boot_misc_detectState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_tcsr_boot_misc_detectState, prop_bool, 0),
-    DEFINE_PROP_END_OF_LIST(),
+    
 };
 
 /**
@@ -167,7 +167,7 @@ static void qcom_tcsr_boot_misc_detect_class_init(ObjectClass *klass, void *data
 
     dc->vmsd = &vmstate_qcom_tcsr_boot_misc_detect;
     dc->realize = &qcom_tcsr_boot_misc_detect_realize;
-    dc->reset = &qcom_tcsr_boot_misc_detect_reset;
+    dc->legacy_reset = &qcom_tcsr_boot_misc_detect_reset;
     device_class_set_props(dc, qcom_tcsr_boot_misc_detect_properties);
 }
 

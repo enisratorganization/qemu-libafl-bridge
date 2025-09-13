@@ -9,7 +9,7 @@
 #include "hw/arm/bsa.h"
 #include "exec/address-spaces.h"
 #include "hw/core/cpu.h"
-#include "qapi/qmp/qlist.h"
+#include "qobject/qlist.h"
 #include "target/arm/cpu.h"
 #include "libafl/instrument.h"
 #include "qemu/log.h"

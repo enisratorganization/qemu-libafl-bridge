@@ -46,7 +46,7 @@ static Property qcom_prng_properties[] = {
     DEFINE_PROP_STRING("prop_char", qcom_prngState, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", qcom_prngState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_prngState, prop_bool, 0),
-    DEFINE_PROP_END_OF_LIST(),
+    
 };
 
 /**
@@ -163,7 +163,7 @@ static void qcom_prng_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_qcom_prng;
     dc->realize = &qcom_prng_realize;
-    dc->reset = &qcom_prng_reset;
+    dc->legacy_reset = &qcom_prng_reset;
     device_class_set_props(dc, qcom_prng_properties);
 }
 

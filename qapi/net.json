@@ -650,7 +650,17 @@
 #     attempt a reconnect after the given number of seconds.  Setting
 #     this to zero disables this function.  (default: 0) (since 8.0)
 #
+# @reconnect-ms: For a client socket, if a socket is disconnected, then
+#     attempt a reconnect after the given number of milliseconds.  Setting
+#     this to zero disables this function.  This member is mutually
+#     exclusive with @reconnect.  (default: 0) (Since: 9.2)
+#
 # Only SocketAddress types 'unix', 'inet' and 'fd' are supported.
+#
+# Features:
+#
+# @deprecated: Member @reconnect is deprecated.  Use @reconnect-ms
+#     instead.
 #
 # Since: 7.2
 ##
@@ -658,7 +668,8 @@
   'data': {
     'addr':   'SocketAddress',
     '*server': 'bool',
-    '*reconnect': 'uint32' } }
+    '*reconnect': { 'type': 'int', 'features': [ 'deprecated' ] },
+    '*reconnect-ms': 'int' } }
 
 ##
 # @NetdevDgramOptions:
@@ -1019,4 +1030,44 @@
 #          "timestamp": {"seconds": 1663330937, "microseconds": 526695} }
 ##
 { 'event': 'NETDEV_STREAM_DISCONNECTED',
+  'data': { 'netdev-id': 'str' } }
+
+##
+# @NETDEV_VHOST_USER_CONNECTED:
+#
+# Emitted when the vhost-user chardev is connected
+#
+# @netdev-id: QEMU netdev id that is connected
+#
+# @chardev-id: The character device id used by the QEMU netdev
+#
+# Since: 10.0
+#
+# .. qmp-example::
+#
+#     <- { "timestamp": {"seconds": 1739538638, "microseconds": 354181 },
+#          "event": "NETDEV_VHOST_USER_CONNECTED",
+#          "data": { "netdev-id": "netdev0", "chardev-id": "chr0" } }
+#
+##
+{ 'event': 'NETDEV_VHOST_USER_CONNECTED',
+  'data': { 'netdev-id': 'str', 'chardev-id': 'str' } }
+
+##
+# @NETDEV_VHOST_USER_DISCONNECTED:
+#
+# Emitted when the vhost-user chardev is disconnected
+#
+# @netdev-id: QEMU netdev id that is disconnected
+#
+# Since: 10.0
+#
+# .. qmp-example::
+#
+#     <- { "timestamp": { "seconds": 1739538634, "microseconds": 920450 },
+#          "event": "NETDEV_VHOST_USER_DISCONNECTED",
+#          "data": { "netdev-id": "netdev0" } }
+#
+##
+{ 'event': 'NETDEV_VHOST_USER_DISCONNECTED',
   'data': { 'netdev-id': 'str' } }

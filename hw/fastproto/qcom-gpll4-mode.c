@@ -46,7 +46,7 @@ static Property qcom_gpll4_mode_properties[] = {
     DEFINE_PROP_STRING("prop_char", qcom_gpll4_modeState, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", qcom_gpll4_modeState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_gpll4_modeState, prop_bool, 0),
-    DEFINE_PROP_END_OF_LIST(),
+    
 };
 
 /**
@@ -150,7 +150,7 @@ static void qcom_gpll4_mode_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_qcom_gpll4_mode;
     dc->realize = &qcom_gpll4_mode_realize;
-    dc->reset = &qcom_gpll4_mode_reset;
+    dc->legacy_reset = &qcom_gpll4_mode_reset;
     device_class_set_props(dc, qcom_gpll4_mode_properties);
 }
 

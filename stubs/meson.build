@@ -55,7 +55,14 @@ endif
 if have_user
   # Symbols that are used by hw/core.
   stub_ss.add(files('cpu-synchronize-state.c'))
-  stub_ss.add(files('qdev.c'))
+
+  # Stubs for QAPI events.  Those can always be included in the build, but
+  # they are not built at all for --disable-system builds.
+  if not have_system
+    stub_ss.add(files('qdev.c'))
+  endif
+
+  stub_ss.add(files('monitor-internal.c'))
 endif
 
 if have_system

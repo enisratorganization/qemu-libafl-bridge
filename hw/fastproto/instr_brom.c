@@ -9,7 +9,7 @@
 #include "hw/arm/bsa.h"
 #include "exec/address-spaces.h"
 #include "hw/core/cpu.h"
-#include "qapi/qmp/qlist.h"
+#include "qobject/qlist.h"
 #include "target/arm/cpu.h"
 #include "libafl/instrument.h"
 #include "crypto/hash.h"
@@ -79,12 +79,12 @@ bool hash_finish(CPUState *cs, vaddr pc, void *opaque)
     dst = ldq_le_phys(&address_space_memory, dst);   //no mistake
 
     char *digest = NULL;
-    QCryptoHashAlgorithm qalg;
+    QCryptoHashAlgo qalg;
     size_t sz = 0;
     if (hashmode2 == 2)
-        qalg = QCRYPTO_HASH_ALG_SHA256;
+        qalg = QCRYPTO_HASH_ALGO_SHA256;
     else if (hashmode2 == 3) 
-        qalg =  QCRYPTO_HASH_ALG_SHA384;
+        qalg =  QCRYPTO_HASH_ALGO_SHA384;
     else {
         qemu_log_mask(LOG_TRACE, "hash_finish unknown mode %d\n", hashmode2);
         return true;

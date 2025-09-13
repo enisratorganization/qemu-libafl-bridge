@@ -32,6 +32,7 @@
 #include "exec/cpu-common.h"
 #include "gdbstub/syscalls.h"
 #include "hw/boards.h"
+#include "hw/resettable.h"
 #include "migration/misc.h"
 #include "migration/postcopy-ram.h"
 #include "monitor/monitor.h"
@@ -50,14 +51,14 @@
 #include "qemu/thread.h"
 #include "qom/object.h"
 #include "qom/object_interfaces.h"
-#include "sysemu/cpus.h"
-#include "sysemu/qtest.h"
-#include "sysemu/replay.h"
-#include "sysemu/reset.h"
-#include "sysemu/runstate.h"
-#include "sysemu/runstate-action.h"
-#include "sysemu/sysemu.h"
-#include "sysemu/tpm.h"
+#include "system/cpus.h"
+#include "system/qtest.h"
+#include "system/replay.h"
+#include "system/reset.h"
+#include "system/runstate.h"
+#include "system/runstate-action.h"
+#include "system/system.h"
+#include "system/tpm.h"
 #include "trace.h"
 
 static NotifierList exit_notifiers =
@@ -511,15 +512,23 @@ static int qemu_debug_requested(void)
 void qemu_system_reset(ShutdownCause reason)
 {
     MachineClass *mc;
+    ResetType type;
 
     mc = current_machine ? MACHINE_GET_CLASS(current_machine) : NULL;
 
     cpu_synchronize_all_states();
 
+    switch (reason) {
+    case SHUTDOWN_CAUSE_SNAPSHOT_LOAD:
+        type = RESET_TYPE_SNAPSHOT_LOAD;
+        break;
+    default:
+        type = RESET_TYPE_COLD;
+    }
     if (mc && mc->reset) {
-        mc->reset(current_machine, reason);
+        mc->reset(current_machine, type);
     } else {
-        qemu_devices_reset(reason);
+        qemu_devices_reset(type);
     }
     switch (reason) {
     case SHUTDOWN_CAUSE_NONE:
@@ -882,6 +891,7 @@ void qemu_remove_exit_notifier(Notifier *notify)
 
 static void qemu_run_exit_notifiers(void)
 {
+    BQL_LOCK_GUARD();
     notifier_list_notify(&exit_notifiers, NULL);
 }
 

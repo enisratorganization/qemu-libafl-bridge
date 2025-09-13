@@ -2,22 +2,20 @@
 
 #ifdef CONFIG_USER_ONLY
 #include "qemu.h"
-#include "user-internals.h"
+#include "user/cpu_loop.h"
 #endif
 
 #include "exec/gdbstub.h"
-#include "exec/cpu-defs.h"
 #include "exec/tb-flush.h"
 #include "exec/exec-all.h"
 #include "hw/core/sysemu-cpu-ops.h"
 
-#include "qapi/qmp/qdict.h"
+#include "qobject/qdict.h"
 #include "monitor/hmp.h"
 #include "monitor/monitor.h"
 #include "monitor/hmp-target.h"
 
 #include "libafl/cpu.h"
-
 #include "libafl/exit.h"
 #include "libafl/hook.h"
 

@@ -11,26 +11,28 @@
 
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
+#include "qemu/log.h"
 
-#include "sysemu/runstate.h"
-#include "sysemu/hvf.h"
-#include "sysemu/hvf_int.h"
-#include "sysemu/hw_accel.h"
+#include "system/runstate.h"
+#include "system/hvf.h"
+#include "system/hvf_int.h"
+#include "system/hw_accel.h"
 #include "hvf_arm.h"
 #include "cpregs.h"
 
 #include <mach/mach_time.h>
 
 #include "exec/address-spaces.h"
+#include "hw/boards.h"
 #include "hw/irq.h"
 #include "qemu/main-loop.h"
-#include "sysemu/cpus.h"
+#include "system/cpus.h"
 #include "arm-powerctl.h"
 #include "target/arm/cpu.h"
 #include "target/arm/internals.h"
 #include "target/arm/multiprocessing.h"
 #include "target/arm/gtimer.h"
-#include "trace/trace-target_arm_hvf.h"
+#include "trace.h"
 #include "migration/vmstate.h"
 
 #include "gdbstub/enums.h"
@@ -183,6 +185,7 @@ void hvf_arm_init_debug(void)
 #define SYSREG_OSLSR_EL1      SYSREG(2, 0, 1, 1, 4)
 #define SYSREG_OSDLR_EL1      SYSREG(2, 0, 1, 3, 4)
 #define SYSREG_CNTPCT_EL0     SYSREG(3, 3, 14, 0, 1)
+#define SYSREG_CNTP_CTL_EL0   SYSREG(3, 3, 14, 2, 1)
 #define SYSREG_PMCR_EL0       SYSREG(3, 3, 9, 12, 0)
 #define SYSREG_PMUSERENR_EL0  SYSREG(3, 3, 9, 14, 0)
 #define SYSREG_PMCNTENSET_EL0 SYSREG(3, 3, 9, 12, 1)
@@ -296,6 +299,8 @@ void hvf_arm_init_debug(void)
 #define TMR_CTL_ISTATUS (1 << 2)
 
 static void hvf_wfi(CPUState *cpu);
+
+static uint32_t chosen_ipa_bit_size;
 
 typedef struct HVFVTimer {
     /* Vtimer value during migration and paused state */
@@ -839,6 +844,16 @@ static uint64_t hvf_get_reg(CPUState *cpu, int rt)
     return val;
 }
 
+static void clamp_id_aa64mmfr0_parange_to_ipa_size(uint64_t *id_aa64mmfr0)
+{
+    uint32_t ipa_size = chosen_ipa_bit_size ?
+            chosen_ipa_bit_size : hvf_arm_get_max_ipa_bit_size();
+
+    /* Clamp down the PARange to the IPA size the kernel supports. */
+    uint8_t index = round_down_to_parange_index(ipa_size);
+    *id_aa64mmfr0 = (*id_aa64mmfr0 & ~R_ID_AA64MMFR0_PARANGE_MASK) | index;
+}
+
 static bool hvf_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf)
 {
     ARMISARegisters host_isar = {};
@@ -863,7 +878,7 @@ static bool hvf_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf)
     hv_vcpu_exit_t *exit;
     int i;
 
-    ahcf->dtb_compatible = "arm,arm-v8";
+    ahcf->dtb_compatible = "arm,armv8";
     ahcf->features = (1ULL << ARM_FEATURE_V8) |
                      (1ULL << ARM_FEATURE_NEON) |
                      (1ULL << ARM_FEATURE_AARCH64) |
@@ -881,6 +896,20 @@ static bool hvf_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf)
     }
     r |= hv_vcpu_get_sys_reg(fd, HV_SYS_REG_MIDR_EL1, &ahcf->midr);
     r |= hv_vcpu_destroy(fd);
+
+    clamp_id_aa64mmfr0_parange_to_ipa_size(&host_isar.id_aa64mmfr0);
+
+    /*
+     * Disable SME, which is not properly handled by QEMU hvf yet.
+     * To allow this through we would need to:
+     * - make sure that the SME state is correctly handled in the
+     *   get_registers/put_registers functions
+     * - get the SME-specific CPU properties to work with accelerators
+     *   other than TCG
+     * - fix any assumptions we made that SME implies SVE (since
+     *   on the M4 there is SME but not SVE)
+     */
+    host_isar.id_aa64pfr1 &= ~R_ID_AA64PFR1_SME_MASK;
 
     ahcf->isar = host_isar;
 
@@ -902,6 +931,30 @@ static bool hvf_arm_get_host_cpu_features(ARMHostCPUFeatures *ahcf)
     }
 
     return r == HV_SUCCESS;
+}
+
+uint32_t hvf_arm_get_default_ipa_bit_size(void)
+{
+    uint32_t default_ipa_size;
+    hv_return_t ret = hv_vm_config_get_default_ipa_size(&default_ipa_size);
+    assert_hvf_ok(ret);
+
+    return default_ipa_size;
+}
+
+uint32_t hvf_arm_get_max_ipa_bit_size(void)
+{
+    uint32_t max_ipa_size;
+    hv_return_t ret = hv_vm_config_get_max_ipa_size(&max_ipa_size);
+    assert_hvf_ok(ret);
+
+    /*
+     * We clamp any IPA size we want to back the VM with to a valid PARange
+     * value so the guest doesn't try and map memory outside of the valid range.
+     * This logic just clamps the passed in IPA bit size to the first valid
+     * PARange value <= to it.
+     */
+    return round_down_to_parange_bit_size(max_ipa_size);
 }
 
 void hvf_arm_set_cpu_features_from_host(ARMCPU *cpu)
@@ -927,6 +980,25 @@ void hvf_arm_set_cpu_features_from_host(ARMCPU *cpu)
 
 void hvf_arch_vcpu_destroy(CPUState *cpu)
 {
+}
+
+hv_return_t hvf_arch_vm_create(MachineState *ms, uint32_t pa_range)
+{
+    hv_return_t ret;
+    hv_vm_config_t config = hv_vm_config_create();
+
+    ret = hv_vm_config_set_ipa_size(config, pa_range);
+    if (ret != HV_SUCCESS) {
+        goto cleanup;
+    }
+    chosen_ipa_bit_size = pa_range;
+
+    ret = hv_vm_create(config);
+
+cleanup:
+    os_release(config);
+
+    return ret;
 }
 
 int hvf_arch_init_vcpu(CPUState *cpu)
@@ -993,6 +1065,11 @@ int hvf_arch_init_vcpu(CPUState *cpu)
     /* We're limited to underlying hardware caps, override internal versions */
     ret = hv_vcpu_get_sys_reg(cpu->accel->fd, HV_SYS_REG_ID_AA64MMFR0_EL1,
                               &arm_cpu->isar.id_aa64mmfr0);
+    assert_hvf_ok(ret);
+
+    clamp_id_aa64mmfr0_parange_to_ipa_size(&arm_cpu->isar.id_aa64mmfr0);
+    ret = hv_vcpu_set_sys_reg(cpu->accel->fd, HV_SYS_REG_ID_AA64MMFR0_EL1,
+                              arm_cpu->isar.id_aa64mmfr0);
     assert_hvf_ok(ret);
 
     return 0;
@@ -1275,6 +1352,7 @@ static int hvf_sysreg_read(CPUState *cpu, uint32_t reg, uint64_t *val)
     case SYSREG_ICC_IGRPEN0_EL1:
     case SYSREG_ICC_IGRPEN1_EL1:
     case SYSREG_ICC_PMR_EL1:
+    case SYSREG_ICC_RPR_EL1:
     case SYSREG_ICC_SGI0R_EL1:
     case SYSREG_ICC_SGI1R_EL1:
     case SYSREG_ICC_SRE_EL1:
@@ -1557,6 +1635,13 @@ static int hvf_sysreg_write(CPUState *cpu, uint32_t reg, uint64_t val)
     case SYSREG_OSLAR_EL1:
         env->cp15.oslsr_el1 = val & 1;
         return 0;
+    case SYSREG_CNTP_CTL_EL0:
+        /*
+         * Guests should not rely on the physical counter, but macOS emits
+         * disable writes to it. Let it do so, but ignore the requests.
+         */
+        qemu_log_mask(LOG_UNIMP, "Unsupported write to CNTP_CTL_EL0\n");
+        return 0;
     case SYSREG_OSDLR_EL1:
         /* Dummy register */
         return 0;
@@ -1582,6 +1667,7 @@ static int hvf_sysreg_write(CPUState *cpu, uint32_t reg, uint64_t val)
     case SYSREG_ICC_IGRPEN0_EL1:
     case SYSREG_ICC_IGRPEN1_EL1:
     case SYSREG_ICC_PMR_EL1:
+    case SYSREG_ICC_RPR_EL1:
     case SYSREG_ICC_SGI0R_EL1:
     case SYSREG_ICC_SGI1R_EL1:
     case SYSREG_ICC_SRE_EL1:
@@ -1899,6 +1985,7 @@ int hvf_vcpu_exec(CPUState *cpu)
         bool isv = syndrome & ARM_EL_ISV;
         bool iswrite = (syndrome >> 6) & 1;
         bool s1ptw = (syndrome >> 7) & 1;
+        bool sse = (syndrome >> 21) & 1;
         uint32_t sas = (syndrome >> 22) & 3;
         uint32_t len = 1 << sas;
         uint32_t srt = (syndrome >> 16) & 0x1f;
@@ -1926,6 +2013,9 @@ int hvf_vcpu_exec(CPUState *cpu)
             address_space_read(&address_space_memory,
                                hvf_exit->exception.physical_address,
                                MEMTXATTRS_UNSPECIFIED, &val, len);
+            if (sse) {
+                val = sextract64(val, 0, len * 8);
+            }
             hvf_set_reg(cpu, srt, val);
         }
 

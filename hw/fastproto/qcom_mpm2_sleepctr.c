@@ -46,7 +46,7 @@ static Property qcom_mpm2_sleepctr_properties[] = {
     DEFINE_PROP_STRING("prop_char", qcom_mpm2_sleepctrState, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", qcom_mpm2_sleepctrState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_mpm2_sleepctrState, prop_bool, 0),
-    DEFINE_PROP_END_OF_LIST(),
+    
 };
 
 /**
@@ -153,7 +153,7 @@ static void qcom_mpm2_sleepctr_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_qcom_mpm2_sleepctr;
     dc->realize = &qcom_mpm2_sleepctr_realize;
-    dc->reset = &qcom_mpm2_sleepctr_reset;
+    dc->legacy_reset = &qcom_mpm2_sleepctr_reset;
     device_class_set_props(dc, qcom_mpm2_sleepctr_properties);
 }
 

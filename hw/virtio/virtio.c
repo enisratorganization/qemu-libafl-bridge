@@ -30,8 +30,8 @@
 #include "hw/virtio/virtio-bus.h"
 #include "hw/qdev-properties.h"
 #include "hw/virtio/virtio-access.h"
-#include "sysemu/dma.h"
-#include "sysemu/runstate.h"
+#include "system/dma.h"
+#include "system/runstate.h"
 #include "virtio-qmp.h"
 
 #include "standard-headers/linux/virtio_ids.h"
@@ -2316,6 +2316,8 @@ void virtio_queue_enable(VirtIODevice *vdev, uint32_t queue_index)
     }
 }
 
+static int virtio_set_features_nocheck(VirtIODevice *vdev, uint64_t val);
+
 void virtio_reset(void *opaque)
 {
     VirtIODevice *vdev = opaque;
@@ -2331,8 +2333,12 @@ void virtio_reset(void *opaque)
         vdev->device_endian = virtio_default_endian();
     }
 
-    if (vdev->vhost_started && k->get_vhost) {
-        vhost_reset_device(k->get_vhost(vdev));
+    if (k->get_vhost) {
+        struct vhost_dev *hdev = k->get_vhost(vdev);
+        /* Only reset when vhost back-end is connected */
+        if (hdev && hdev->vhost_ops) {
+            vhost_reset_device(hdev);
+        }
     }
 
     if (k->reset) {
@@ -2342,7 +2348,7 @@ void virtio_reset(void *opaque)
     vdev->start_on_kick = false;
     vdev->started = false;
     vdev->broken = false;
-    vdev->guest_features = 0;
+    virtio_set_features_nocheck(vdev, 0);
     vdev->queue_sel = 0;
     vdev->status = 0;
     vdev->disabled = false;
@@ -3258,6 +3264,13 @@ virtio_load(VirtIODevice *vdev, QEMUFile *f, int version_id)
         return -1;
     }
 
+    if (vdc->pre_load_queues) {
+        ret = vdc->pre_load_queues(vdev, num);
+        if (ret) {
+            return ret;
+        }
+    }
+
     for (i = 0; i < num; i++) {
         vdev->vq[i].vring.num = qemu_get_be32(f);
         if (k->has_variable_vring_alignment) {
@@ -3665,7 +3678,7 @@ static void virtio_queue_packed_update_used_idx(VirtIODevice *vdev, int n)
     return;
 }
 
-static void virtio_split_packed_update_used_idx(VirtIODevice *vdev, int n)
+static void virtio_queue_split_update_used_idx(VirtIODevice *vdev, int n)
 {
     RCU_READ_LOCK_GUARD();
     if (vdev->vq[n].vring.desc) {
@@ -3678,7 +3691,7 @@ void virtio_queue_update_used_idx(VirtIODevice *vdev, int n)
     if (virtio_vdev_has_feature(vdev, VIRTIO_F_RING_PACKED)) {
         return virtio_queue_packed_update_used_idx(vdev, n);
     } else {
-        return virtio_split_packed_update_used_idx(vdev, n);
+        return virtio_queue_split_update_used_idx(vdev, n);
     }
 }
 
@@ -4001,13 +4014,12 @@ static void virtio_device_instance_finalize(Object *obj)
     g_free(vdev->vector_queues);
 }
 
-static Property virtio_properties[] = {
+static const Property virtio_properties[] = {
     DEFINE_VIRTIO_COMMON_FEATURES(VirtIODevice, host_features),
     DEFINE_PROP_BOOL("use-started", VirtIODevice, use_started, true),
     DEFINE_PROP_BOOL("use-disabled-flag", VirtIODevice, use_disabled_flag, true),
     DEFINE_PROP_BOOL("x-disable-legacy-check", VirtIODevice,
                      disable_legacy_check, false),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static int virtio_device_start_ioeventfd_impl(VirtIODevice *vdev)

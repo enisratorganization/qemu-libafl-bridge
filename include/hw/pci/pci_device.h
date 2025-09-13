@@ -57,7 +57,7 @@ typedef struct PCIReqIDCache PCIReqIDCache;
 struct PCIDevice {
     DeviceState qdev;
     bool partially_hotplugged;
-    bool has_power;
+    bool enabled;
 
     /* PCI config space */
     uint8_t *config;
@@ -105,6 +105,9 @@ struct PCIDevice {
     /* Capability bits */
     uint32_t cap_present;
 
+    /* Offset of PM capability in config space */
+    uint8_t pm_cap;
+
     /* Offset of MSI-X capability in config space */
     uint8_t msix_cap;
 
@@ -148,7 +151,7 @@ struct PCIDevice {
     uint32_t romsize;
     bool has_rom;
     MemoryRegion rom;
-    uint32_t rom_bar;
+    int32_t rom_bar;
 
     /* INTx routing notifier */
     PCIINTxRoutingNotifier intx_routing_notifier;
@@ -168,7 +171,11 @@ struct PCIDevice {
     char *failover_pair_id;
     uint32_t acpi_index;
 
-    /* Maximum DMA bounce buffer size used for indirect memory map requests */
+    /*
+     * Indirect DMA region bounce buffer size as configured for the device. This
+     * is a configuration parameter that is reflected into bus_master_as when
+     * realizing the device.
+     */
     uint32_t max_bounce_buffer_size;
 };
 

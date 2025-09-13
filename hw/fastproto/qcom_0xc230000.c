@@ -46,7 +46,7 @@ static Property qcom_0xc230000_properties[] = {
     DEFINE_PROP_STRING("prop_char", qcom_0xc230000State, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", qcom_0xc230000State, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_0xc230000State, prop_bool, 0),
-    DEFINE_PROP_END_OF_LIST(),
+    
 };
 
 /**
@@ -150,7 +150,7 @@ static void qcom_0xc230000_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_qcom_0xc230000;
     dc->realize = &qcom_0xc230000_realize;
-    dc->reset = &qcom_0xc230000_reset;
+    dc->legacy_reset = &qcom_0xc230000_reset;
     device_class_set_props(dc, qcom_0xc230000_properties);
 }
 

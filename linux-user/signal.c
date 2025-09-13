@@ -18,9 +18,10 @@
  */
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
+#include "qemu/cutils.h"
 #include "gdbstub/user.h"
 #include "exec/page-protection.h"
-#include "hw/core/tcg-cpu-ops.h"
+#include "accel/tcg/cpu-ops.h"
 
 #include <sys/ucontext.h>
 #include <sys/resource.h>
@@ -32,12 +33,16 @@
 #include "trace.h"
 #include "signal-common.h"
 #include "host-signal.h"
+#include "user/cpu_loop.h"
+#include "user/page-protection.h"
 #include "user/safe-syscall.h"
+#include "user/signal.h"
 #include "tcg/tcg.h"
 
 //// --- Begin LibAFL code ---
 
 #include "libafl/user.h"
+#include "libafl/exit.h"
 
 //// --- End LibAFL code ---
 
@@ -522,20 +527,83 @@ static int core_dump_signal(int sig)
     }
 }
 
-static void signal_table_init(void)
+int host_interrupt_signal;
+
+static void signal_table_init(const char *rtsig_map)
 {
     int hsig, tsig, count;
 
+    if (rtsig_map) {
+        /*
+         * Map host RT signals to target RT signals according to the
+         * user-provided specification.
+         */
+        const char *s = rtsig_map;
+
+        while (true) {
+            int i;
+
+            if (qemu_strtoi(s, &s, 10, &tsig) || *s++ != ' ') {
+                fprintf(stderr, "Malformed target signal in QEMU_RTSIG_MAP\n");
+                exit(EXIT_FAILURE);
+            }
+            if (qemu_strtoi(s, &s, 10, &hsig) || *s++ != ' ') {
+                fprintf(stderr, "Malformed host signal in QEMU_RTSIG_MAP\n");
+                exit(EXIT_FAILURE);
+            }
+            if (qemu_strtoi(s, &s, 10, &count) || (*s && *s != ',')) {
+                fprintf(stderr, "Malformed signal count in QEMU_RTSIG_MAP\n");
+                exit(EXIT_FAILURE);
+            }
+
+            for (i = 0; i < count; i++, tsig++, hsig++) {
+                if (tsig < TARGET_SIGRTMIN || tsig > TARGET_NSIG) {
+                    fprintf(stderr, "%d is not a target rt signal\n", tsig);
+                    exit(EXIT_FAILURE);
+                }
+                if (hsig < SIGRTMIN || hsig > SIGRTMAX) {
+                    fprintf(stderr, "%d is not a host rt signal\n", hsig);
+                    exit(EXIT_FAILURE);
+                }
+                if (host_to_target_signal_table[hsig]) {
+                    fprintf(stderr, "%d already maps %d\n",
+                            hsig, host_to_target_signal_table[hsig]);
+                    exit(EXIT_FAILURE);
+                }
+                host_to_target_signal_table[hsig] = tsig;
+            }
+
+            if (*s) {
+                s++;
+            } else {
+                break;
+            }
+        }
+    } else {
+        /*
+         * Default host-to-target RT signal mapping.
+         *
+         * Signals are supported starting from TARGET_SIGRTMIN and going up
+         * until we run out of host realtime signals.  Glibc uses the lower 2
+         * RT signals and (hopefully) nobody uses the upper ones.
+         * This is why SIGRTMIN (34) is generally greater than __SIGRTMIN (32).
+         * To fix this properly we would need to do manual signal delivery
+         * multiplexed over a single host signal.
+         * Attempts for configure "missing" signals via sigaction will be
+         * silently ignored.
+         *
+         * Reserve two signals for internal usage (see below).
+         */
+
+        hsig = SIGRTMIN + 2;
+        for (tsig = TARGET_SIGRTMIN;
+             hsig <= SIGRTMAX && tsig <= TARGET_NSIG;
+             hsig++, tsig++) {
+            host_to_target_signal_table[hsig] = tsig;
+        }
+    }
+
     /*
-     * Signals are supported starting from TARGET_SIGRTMIN and going up
-     * until we run out of host realtime signals.  Glibc uses the lower 2
-     * RT signals and (hopefully) nobody uses the upper ones.
-     * This is why SIGRTMIN (34) is generally greater than __SIGRTMIN (32).
-     * To fix this properly we would need to do manual signal delivery
-     * multiplexed over a single host signal.
-     * Attempts for configure "missing" signals via sigaction will be
-     * silently ignored.
-     *
      * Remap the target SIGABRT, so that we can distinguish host abort
      * from guest abort.  When the guest registers a signal handler or
      * calls raise(SIGABRT), the host will raise SIG_RTn.  If the guest
@@ -545,21 +613,32 @@ static void signal_table_init(void)
      * parent sees the correct mapping from wait status.
      */
 
-    hsig = SIGRTMIN;
     host_to_target_signal_table[SIGABRT] = 0;
-    host_to_target_signal_table[hsig++] = TARGET_SIGABRT;
-
-    for (tsig = TARGET_SIGRTMIN;
-         hsig <= SIGRTMAX && tsig <= TARGET_NSIG;
-         hsig++, tsig++) {
-        host_to_target_signal_table[hsig] = tsig;
+    for (hsig = SIGRTMIN; hsig <= SIGRTMAX; hsig++) {
+        if (!host_to_target_signal_table[hsig]) {
+            if (host_interrupt_signal) {
+                host_to_target_signal_table[hsig] = TARGET_SIGABRT;
+                break;
+            } else {
+                host_interrupt_signal = hsig;
+            }
+        }
+    }
+    if (hsig > SIGRTMAX) {
+        fprintf(stderr,
+                "No rt signals left for interrupt and SIGABRT mapping\n");
+        exit(EXIT_FAILURE);
     }
 
     /* Invert the mapping that has already been assigned. */
     for (hsig = 1; hsig < _NSIG; hsig++) {
         tsig = host_to_target_signal_table[hsig];
         if (tsig) {
-            assert(target_to_host_signal_table[tsig] == 0);
+            if (target_to_host_signal_table[tsig]) {
+                fprintf(stderr, "%d is already mapped to %d\n",
+                        tsig, target_to_host_signal_table[tsig]);
+                exit(EXIT_FAILURE);
+            }
             target_to_host_signal_table[tsig] = hsig;
         }
     }
@@ -582,13 +661,13 @@ static void signal_table_init(void)
     trace_signal_table_init(count);
 }
 
-void signal_init(void)
+void signal_init(const char *rtsig_map)
 {
     TaskState *ts = get_task_state(thread_cpu);
     struct sigaction act, oact;
 
     /* initialize signal conversion tables */
-    signal_table_init();
+    signal_table_init(rtsig_map);
 
     /* Set the signal mask from the host mask. */
     sigprocmask(0, 0, &ts->signal_mask);
@@ -627,6 +706,8 @@ void signal_init(void)
         }
         sigact_table[tsig - 1]._sa_handler = thand;
     }
+
+    sigaction(host_interrupt_signal, &act, NULL);
 }
 
 /* Force a synchronously taken signal. The kernel force_sig() function
@@ -683,7 +764,7 @@ void force_sigsegv(int oldsig)
 void cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
                            MMUAccessType access_type, bool maperr, uintptr_t ra)
 {
-    const TCGCPUOps *tcg_ops = CPU_GET_CLASS(cpu)->tcg_ops;
+    const TCGCPUOps *tcg_ops = cpu->cc->tcg_ops;
 
     if (tcg_ops->record_sigsegv) {
         tcg_ops->record_sigsegv(cpu, addr, access_type, maperr, ra);
@@ -699,7 +780,7 @@ void cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
 void cpu_loop_exit_sigbus(CPUState *cpu, target_ulong addr,
                           MMUAccessType access_type, uintptr_t ra)
 {
-    const TCGCPUOps *tcg_ops = CPU_GET_CLASS(cpu)->tcg_ops;
+    const TCGCPUOps *tcg_ops = cpu->cc->tcg_ops;
 
     if (tcg_ops->record_sigbus) {
         tcg_ops->record_sigbus(cpu, addr, access_type, ra);
@@ -790,7 +871,6 @@ void dump_core_and_abort(CPUArchState *env, int target_sig)
     }
 
     preexit_cleanup(env, 128 + target_sig);
-
     die_with_signal(host_sig);
 }
 
@@ -904,7 +984,6 @@ void die_from_signal(siginfo_t *info)
 
     error_report("QEMU internal SIG%s {code=%s, addr=%p}",
                  sig, code, info->si_addr);
-
     die_with_signal(info->si_signo);
 }
 
@@ -1004,6 +1083,12 @@ void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
 //// --- Start LibAFL code ---
     libafl_set_in_host_signal_ctx();
 //// --- End LibAFL code ---
+
+    if (host_sig == host_interrupt_signal) {
+        ts->signal_pending = 1;
+        cpu_exit(thread_cpu);
+        return;
+    }
 
     /*
      * Non-spoofed SIGSEGV and SIGBUS are synchronous, and need special
@@ -1267,13 +1352,13 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
     if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {
         print_taken_signal(sig, &unswapped);
     }
-    
+
     //// --- Start LibAFL code ---
-    
+
     if (libafl_force_dfl && (sig == SIGABRT || sig == SIGSEGV || sig == SIGILL || sig == SIGBUS)) {
         handler = TARGET_SIG_DFL;
     }
-    
+
     //// --- End LibAFL code ---
 
     if (handler == TARGET_SIG_DFL) {
@@ -1284,7 +1369,14 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
                    sig != TARGET_SIGURG &&
                    sig != TARGET_SIGWINCH &&
                    sig != TARGET_SIGCONT) {
-            dump_core_and_abort(cpu_env, sig);
+//// --- Start LibAFL code ---
+            if (libafl_get_return_on_crash()) {
+                libafl_exit_request_crash(env_cpu(cpu_env));
+            } else {
+                dump_core_and_abort(cpu_env, sig);
+            }
+//// --- End LibAFL code ---
+            // dump_core_and_abort(cpu_env, sig);
         }
     } else if (handler == TARGET_SIG_IGN) {
         /* ignore sig */

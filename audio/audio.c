@@ -32,15 +32,15 @@
 #include "qapi/qobject-input-visitor.h"
 #include "qapi/qapi-visit-audio.h"
 #include "qapi/qapi-commands-audio.h"
-#include "qapi/qmp/qdict.h"
+#include "qobject/qdict.h"
 #include "qemu/cutils.h"
 #include "qemu/error-report.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
 #include "qemu/help_option.h"
-#include "sysemu/sysemu.h"
-#include "sysemu/replay.h"
-#include "sysemu/runstate.h"
+#include "system/system.h"
+#include "system/replay.h"
+#include "system/runstate.h"
 #include "ui/qemu-spice.h"
 #include "trace.h"
 
@@ -905,6 +905,14 @@ size_t AUD_read(SWVoiceIn *sw, void *buf, size_t size)
 
 int AUD_get_buffer_size_out(SWVoiceOut *sw)
 {
+    if (!sw) {
+        return 0;
+    }
+
+    if (audio_get_pdo_out(sw->s->dev)->mixing_engine) {
+        return sw->resample_buf.size * sw->info.bytes_per_frame;
+    }
+
     return sw->hw->samples * sw->hw->info.bytes_per_frame;
 }
 

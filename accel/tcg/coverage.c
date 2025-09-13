@@ -8,7 +8,7 @@
 #include "qemu/osdep.h"
 #include "hw/core/cpu.h"
 #include "exec/coverage.h"
-#include "qapi/qmp/qdict.h"
+#include "qobject/qdict.h"
 #include "qapi/error.h"
 #include "monitor/hmp.h"
 #include "monitor/monitor.h"

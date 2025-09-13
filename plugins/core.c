@@ -12,22 +12,14 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include "qemu/osdep.h"
-#include "qemu/error-report.h"
-#include "qemu/config-file.h"
-#include "qapi/error.h"
 #include "qemu/lockable.h"
 #include "qemu/option.h"
 #include "qemu/plugin.h"
 #include "qemu/queue.h"
 #include "qemu/rcu_queue.h"
-#include "qemu/xxhash.h"
 #include "qemu/rcu.h"
-#include "hw/core/cpu.h"
-
-#include "exec/exec-all.h"
 #include "exec/tb-flush.h"
-#include "tcg/tcg.h"
-#include "tcg/tcg-op.h"
+#include "tcg/tcg-op-common.h"
 #include "plugin.h"
 
 struct qemu_plugin_cb {
@@ -602,6 +594,8 @@ void exec_inline_op(enum plugin_dyn_cb_type type,
 }
 
 void qemu_plugin_vcpu_mem_cb(CPUState *cpu, uint64_t vaddr,
+                             uint64_t value_low,
+                             uint64_t value_high,
                              MemOpIdx oi, enum qemu_plugin_mem_rw rw)
 {
     GArray *arr = cpu->neg.plugin_mem_cbs;
@@ -610,6 +604,10 @@ void qemu_plugin_vcpu_mem_cb(CPUState *cpu, uint64_t vaddr,
     if (arr == NULL) {
         return;
     }
+
+    cpu->neg.plugin_mem_value_low = value_low;
+    cpu->neg.plugin_mem_value_high = value_high;
+
     for (i = 0; i < arr->len; i++) {
         struct qemu_plugin_dyn_cb *cb =
             &g_array_index(arr, struct qemu_plugin_dyn_cb, i);

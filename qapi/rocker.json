@@ -26,6 +26,8 @@
 #
 # Return rocker switch information.
 #
+# @name: switch name
+#
 # Returns: @Rocker information
 #
 # Since: 2.4
@@ -93,6 +95,8 @@
 # @query-rocker-ports:
 #
 # Return rocker switch port information.
+#
+# @name: port name
 #
 # Returns: a list of @RockerPort information
 #
@@ -250,7 +254,7 @@
 #                       "action": {"goto-tbl": 10},
 #                       "mask": {"in-pport": 4294901760}
 #                      },
-#                      {...},
+#                      ...
 #        ]}
 ##
 { 'command': 'query-rocker-of-dpa-flows',

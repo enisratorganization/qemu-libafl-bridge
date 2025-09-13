@@ -5,12 +5,14 @@
 #include "tcg/tcg-temp-internal.h"
 #include "tcg/tcg-op-common.h"
 #include "tcg-internal.h"
+#include "tcg-has.h"
 #include "exec/coverage.h"
+#include "tcg/coverage-tcg.h"
 
 void tcg_gen_add_mem_idx_i64(TCGv_i64 base, TCGv_i64 index, TCGv_i64 val, int elem_sz, int ofs)
 {
     if(TCG_TARGET_HAS_add_mem_idx_i64) {
-        tcg_gen_op5(INDEX_op_add_mem_idx_i64, tcgv_i64_arg(base), tcgv_i64_arg(index), tcgv_i64_arg(val), elem_sz, ofs);
+        tcg_gen_op5(INDEX_op_add_mem_idx_i64, TCG_TYPE_I64, tcgv_i64_arg(base), tcgv_i64_arg(index), tcgv_i64_arg(val), elem_sz, ofs);
     } else {
         tcg_debug_assert(elem_sz == 1 || elem_sz == 2 || elem_sz == 4 || elem_sz == 8);
         TCGv_i64 t0 = tcg_temp_ebb_new_i64();

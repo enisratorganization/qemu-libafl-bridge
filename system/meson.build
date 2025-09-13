@@ -1,16 +1,15 @@
 specific_ss.add(when: 'CONFIG_SYSTEM_ONLY', if_true: [files(
   'arch_init.c',
   'ioport.c',
+  'globals-target.c',
   'memory.c',
   'physmem.c',
-  'watchpoint.c',
 )])
 
 system_ss.add(files(
   'balloon.c',
   'bootdevice.c',
   'cpus.c',
-  'cpu-throttle.c',
   'cpu-timers.c',
   'datadir.c',
   'dirtylimit.c',
@@ -25,6 +24,7 @@ system_ss.add(files(
   'runstate.c',
   'tpm-hmp-cmds.c',
   'vl.c',
+  'watchpoint.c',
 ), sdl, libpmem, libdaxctl)
 
 if have_tpm

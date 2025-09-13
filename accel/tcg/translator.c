@@ -15,9 +15,27 @@
 #include "exec/cpu_ldst.h"
 #include "exec/plugin-gen.h"
 #include "exec/cpu_ldst.h"
+#include "exec/tswap.h"
 #include "tcg/tcg-op-common.h"
 #include "internal-target.h"
 #include "disas/disas.h"
+#include "tb-internal.h"
+
+//// --- Begin LibAFL code ---
+
+#include "libafl/exit.h"
+#include "libafl/hook.h"
+#include "libafl/instrument.h"
+
+#include "libafl/hooks/tcg/instruction.h"
+#include "libafl/hooks/tcg/backdoor.h"
+
+#ifndef TARGET_LONG_BITS
+#error "TARGET_LONG_BITS not defined"
+#endif
+
+//// --- End LibAFL code ---
+
 
 static void set_can_do_io(DisasContextBase *db, bool val)
 {
@@ -102,20 +120,10 @@ static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
     }
 }
 
-//// --- Begin LibAFL code ---
-
-#include "libafl/exit.h"
-#include "libafl/instrument.h"
-#include "libafl/hook.h"
-
-#include "libafl/hooks/tcg/instruction.h"
-#include "libafl/hooks/tcg/backdoor.h"
-
-#ifndef TARGET_LONG_BITS
-#error "TARGET_LONG_BITS not defined"
-#endif
-
-//// --- End LibAFL code ---
+bool translator_is_same_page(const DisasContextBase *db, vaddr addr)
+{
+    return ((addr ^ db->pc_first) & TARGET_PAGE_MASK) == 0;
+}
 
 bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
 {
@@ -125,7 +133,7 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
     }
 
     /* Check for the dest on the same page as the start of the TB.  */
-    return ((db->pc_first ^ dest) & TARGET_PAGE_MASK) == 0;
+    return translator_is_same_page(db, dest);
 }
 
 void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
@@ -144,7 +152,6 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->is_jmp = DISAS_NEXT;
     db->num_insns = 0;
     db->max_insns = *max_insns;
-    db->singlestep_enabled = cflags & CF_SINGLE_STEP;
     db->insn_start = NULL;
     db->fake_insn = false;
     db->host_addr[0] = host_pc;

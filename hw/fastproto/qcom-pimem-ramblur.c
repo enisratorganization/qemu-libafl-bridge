@@ -46,7 +46,7 @@ static Property qcom_pimem_ramblur_properties[] = {
     DEFINE_PROP_STRING("prop_char", qcom_pimem_ramblurState, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", qcom_pimem_ramblurState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_pimem_ramblurState, prop_bool, 0),
-    DEFINE_PROP_END_OF_LIST(),
+    
 };
 
 /**
@@ -164,7 +164,7 @@ static void qcom_pimem_ramblur_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_qcom_pimem_ramblur;
     dc->realize = &qcom_pimem_ramblur_realize;
-    dc->reset = &qcom_pimem_ramblur_reset;
+    dc->legacy_reset = &qcom_pimem_ramblur_reset;
     device_class_set_props(dc, qcom_pimem_ramblur_properties);
 }
 

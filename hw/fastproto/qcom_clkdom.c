@@ -50,7 +50,7 @@ static Property qcom_clkdom_properties[] = {
     DEFINE_PROP_STRING("prop_str", qcom_clkdomState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", qcom_clkdomState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_clkdomState, prop_bool, 0),
-    DEFINE_PROP_END_OF_LIST(),
+    
 };
 
 /**
@@ -191,7 +191,7 @@ static void qcom_clkdom_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_qcom_clkdom;
     dc->realize = &qcom_clkdom_realize;
-    dc->reset = &qcom_clkdom_reset;
+    dc->legacy_reset = &qcom_clkdom_reset;
     device_class_set_props(dc, qcom_clkdom_properties);
 }
 

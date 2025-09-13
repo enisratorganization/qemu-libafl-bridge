@@ -9,7 +9,7 @@
 #include "hw/arm/bsa.h"
 #include "exec/address-spaces.h"
 #include "hw/core/cpu.h"
-#include "qapi/qmp/qlist.h"
+#include "qobject/qlist.h"
 #include "target/arm/cpu.h"
 #include "libafl/instrument.h"
 #include "crypto/hash.h"
@@ -143,12 +143,12 @@ static bool tzbsp_hash_final(CPUState *cs, vaddr pc, void *opaque)
     ARMCPU *cpu = ARM_CPU(cs);
     uint64_t ptr1 = cpu->env.xregs[1];
     char *digest = NULL;
-    QCryptoHashAlgorithm qalg;
+    QCryptoHashAlgo qalg;
     size_t sz = 0;
     if (hashmode == 3)
-        qalg = QCRYPTO_HASH_ALG_SHA256;
+        qalg = QCRYPTO_HASH_ALGO_SHA256;
     else if (hashmode == 4) 
-        qalg =  QCRYPTO_HASH_ALG_SHA384;
+        qalg =  QCRYPTO_HASH_ALGO_SHA384;
     else {
         qemu_log_mask(LOG_TRACE, "%s unknown mode %d\n", __func__,  hashmode);
         return true;
@@ -204,10 +204,10 @@ static bool tzbsp2_hash_final(CPUState *cs, vaddr pc, void *opaque)
     ARMCPU *cpu = ARM_CPU(cs);
     uint64_t ptr1 = cpu->env.xregs[1];
     char *digest = NULL;
-    QCryptoHashAlgorithm qalg;
+    QCryptoHashAlgo qalg;
     size_t sz = 0;
     if (hashmode2 == 3)
-        qalg = QCRYPTO_HASH_ALG_SHA384;
+        qalg = QCRYPTO_HASH_ALGO_SHA384;
     else {
         qemu_log_mask(LOG_TRACE, "%s unknown mode %d\n", __func__,  hashmode2);
         return true;

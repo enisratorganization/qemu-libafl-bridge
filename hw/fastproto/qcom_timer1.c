@@ -50,7 +50,7 @@ static Property qcom_timer1_properties[] = {
     DEFINE_PROP_STRING("prop_str", qcom_timer1State, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", qcom_timer1State, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_timer1State, prop_bool, 0),
-    DEFINE_PROP_END_OF_LIST(),
+    
 };
 
 /**
@@ -155,7 +155,7 @@ static void qcom_timer1_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_qcom_timer1;
     dc->realize = &qcom_timer1_realize;
-    dc->reset = &qcom_timer1_reset;
+    dc->legacy_reset = &qcom_timer1_reset;
     device_class_set_props(dc, qcom_timer1_properties);
 }
 

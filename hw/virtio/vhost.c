@@ -26,7 +26,7 @@
 #include "hw/mem/memory-device.h"
 #include "migration/blocker.h"
 #include "migration/qemu-file-types.h"
-#include "sysemu/dma.h"
+#include "system/dma.h"
 #include "trace.h"
 
 /* enabled until disconnected backend stabilizes */
@@ -46,12 +46,6 @@
 static struct vhost_log *vhost_log[VHOST_BACKEND_TYPE_MAX];
 static struct vhost_log *vhost_log_shm[VHOST_BACKEND_TYPE_MAX];
 static QLIST_HEAD(, vhost_dev) vhost_log_devs[VHOST_BACKEND_TYPE_MAX];
-
-/* Memslots used by backends that support private memslots (without an fd). */
-static unsigned int used_memslots;
-
-/* Memslots used by backends that only support shared memslots (with an fd). */
-static unsigned int used_shared_memslots;
 
 static QLIST_HEAD(, vhost_dev) vhost_devices =
     QLIST_HEAD_INITIALIZER(vhost_devices);
@@ -74,15 +68,15 @@ unsigned int vhost_get_free_memslots(void)
 
     QLIST_FOREACH(hdev, &vhost_devices, entry) {
         unsigned int r = hdev->vhost_ops->vhost_backend_memslots_limit(hdev);
-        unsigned int cur_free;
+        unsigned int cur_free = r - hdev->mem->nregions;
 
-        if (hdev->vhost_ops->vhost_backend_no_private_memslots &&
-            hdev->vhost_ops->vhost_backend_no_private_memslots(hdev)) {
-            cur_free = r - used_shared_memslots;
+        if (unlikely(r < hdev->mem->nregions)) {
+            warn_report_once("used (%u) vhost backend memory slots exceed"
+                             " the device limit (%u).", hdev->mem->nregions, r);
+            free = 0;
         } else {
-            cur_free = r - used_memslots;
+            free = MIN(free, cur_free);
         }
-        free = MIN(free, cur_free);
     }
     return free;
 }
@@ -665,13 +659,6 @@ static void vhost_commit(MemoryListener *listener)
                        dev->n_mem_sections * sizeof dev->mem->regions[0];
     dev->mem = g_realloc(dev->mem, regions_size);
     dev->mem->nregions = dev->n_mem_sections;
-
-    if (dev->vhost_ops->vhost_backend_no_private_memslots &&
-        dev->vhost_ops->vhost_backend_no_private_memslots(dev)) {
-        used_shared_memslots = dev->mem->nregions;
-    } else {
-        used_memslots = dev->mem->nregions;
-    }
 
     for (i = 0; i < dev->n_mem_sections; i++) {
         struct vhost_memory_region *cur_vmr = dev->mem->regions + i;
@@ -1619,15 +1606,11 @@ int vhost_dev_init(struct vhost_dev *hdev, void *opaque,
     QLIST_INSERT_HEAD(&vhost_devices, hdev, entry);
 
     /*
-     * The listener we registered properly updated the corresponding counter.
-     * So we can trust that these values are accurate.
+     * The listener we registered properly setup the number of required
+     * memslots in vhost_commit().
      */
-    if (hdev->vhost_ops->vhost_backend_no_private_memslots &&
-        hdev->vhost_ops->vhost_backend_no_private_memslots(hdev)) {
-        used = used_shared_memslots;
-    } else {
-        used = used_memslots;
-    }
+    used = hdev->mem->nregions;
+
     /*
      * We assume that all reserved memslots actually require a real memslot
      * in our vhost backend. This might not be true, for example, if the
@@ -1682,9 +1665,9 @@ void vhost_dev_cleanup(struct vhost_dev *hdev)
     memset(hdev, 0, sizeof(struct vhost_dev));
 }
 
-static void vhost_dev_disable_notifiers_nvqs(struct vhost_dev *hdev,
-                                             VirtIODevice *vdev,
-                                             unsigned int nvqs)
+void vhost_dev_disable_notifiers_nvqs(struct vhost_dev *hdev,
+                                      VirtIODevice *vdev,
+                                      unsigned int nvqs)
 {
     BusState *qbus = BUS(qdev_get_parent_bus(DEVICE(vdev)));
     int i, r;
@@ -1930,62 +1913,6 @@ void vhost_dev_free_inflight(struct vhost_inflight *inflight)
     }
 }
 
-static int vhost_dev_resize_inflight(struct vhost_inflight *inflight,
-                                     uint64_t new_size)
-{
-    Error *err = NULL;
-    int fd = -1;
-    void *addr = qemu_memfd_alloc("vhost-inflight", new_size,
-                                  F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL,
-                                  &fd, &err);
-
-    if (err) {
-        error_report_err(err);
-        return -ENOMEM;
-    }
-
-    vhost_dev_free_inflight(inflight);
-    inflight->offset = 0;
-    inflight->addr = addr;
-    inflight->fd = fd;
-    inflight->size = new_size;
-
-    return 0;
-}
-
-void vhost_dev_save_inflight(struct vhost_inflight *inflight, QEMUFile *f)
-{
-    if (inflight->addr) {
-        qemu_put_be64(f, inflight->size);
-        qemu_put_be16(f, inflight->queue_size);
-        qemu_put_buffer(f, inflight->addr, inflight->size);
-    } else {
-        qemu_put_be64(f, 0);
-    }
-}
-
-int vhost_dev_load_inflight(struct vhost_inflight *inflight, QEMUFile *f)
-{
-    uint64_t size;
-
-    size = qemu_get_be64(f);
-    if (!size) {
-        return 0;
-    }
-
-    if (inflight->size != size) {
-        int ret = vhost_dev_resize_inflight(inflight, size);
-        if (ret < 0) {
-            return ret;
-        }
-    }
-    inflight->queue_size = qemu_get_be16(f);
-
-    qemu_get_buffer(f, inflight->addr, size);
-
-    return 0;
-}
-
 int vhost_dev_prepare_inflight(struct vhost_dev *hdev, VirtIODevice *vdev)
 {
     int r;
@@ -2151,11 +2078,22 @@ int vhost_dev_start(struct vhost_dev *hdev, VirtIODevice *vdev, bool vrings)
          * vhost-kernel code requires for this.*/
         for (i = 0; i < hdev->nvqs; ++i) {
             struct vhost_virtqueue *vq = hdev->vqs + i;
-            vhost_device_iotlb_miss(hdev, vq->used_phys, true);
+            r = vhost_device_iotlb_miss(hdev, vq->used_phys, true);
+            if (r) {
+                goto fail_iotlb;
+            }
         }
     }
     vhost_start_config_intr(hdev);
     return 0;
+fail_iotlb:
+    if (vhost_dev_has_iommu(hdev) &&
+        hdev->vhost_ops->vhost_set_iotlb_callback) {
+        hdev->vhost_ops->vhost_set_iotlb_callback(hdev, false);
+    }
+    if (hdev->vhost_ops->vhost_dev_start) {
+        hdev->vhost_ops->vhost_dev_start(hdev, false);
+    }
 fail_start:
     if (vrings) {
         vhost_dev_set_vring_enable(hdev, false);

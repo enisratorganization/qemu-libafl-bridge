@@ -50,7 +50,7 @@ static Property qcom_spmi_properties[] = {
     DEFINE_PROP_STRING("prop_str", qcom_spmiState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", qcom_spmiState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_spmiState, prop_bool, 0),
-    DEFINE_PROP_END_OF_LIST(),
+    
 };
 
 
@@ -224,7 +224,7 @@ static void qcom_spmi_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_qcom_spmi;
     dc->realize = &qcom_spmi_realize;
-    dc->reset = &qcom_spmi_reset;
+    dc->legacy_reset = &qcom_spmi_reset;
     device_class_set_props(dc, qcom_spmi_properties);
 }
 

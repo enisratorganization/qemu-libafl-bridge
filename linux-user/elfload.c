@@ -8,7 +8,9 @@
 
 #include "qemu.h"
 #include "user/tswap-target.h"
+#include "user/page-protection.h"
 #include "exec/page-protection.h"
+#include "exec/translation-block.h"
 #include "user/guest-base.h"
 #include "user-internals.h"
 #include "signal-common.h"
@@ -203,7 +205,7 @@ static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUX86State *en
     (*regs)[12] = tswapreg(env->regs[R_EDX]);
     (*regs)[13] = tswapreg(env->regs[R_ESI]);
     (*regs)[14] = tswapreg(env->regs[R_EDI]);
-    (*regs)[15] = tswapreg(env->regs[R_EAX]); /* XXX */
+    (*regs)[15] = tswapreg(get_task_state(env_cpu_const(env))->orig_ax);
     (*regs)[16] = tswapreg(env->eip);
     (*regs)[17] = tswapreg(env->segs[R_CS].selector & 0xffff);
     (*regs)[18] = tswapreg(env->eflags);
@@ -306,7 +308,7 @@ static void elf_core_copy_regs(target_elf_gregset_t *regs, const CPUX86State *en
     (*regs)[8] = tswapreg(env->segs[R_ES].selector & 0xffff);
     (*regs)[9] = tswapreg(env->segs[R_FS].selector & 0xffff);
     (*regs)[10] = tswapreg(env->segs[R_GS].selector & 0xffff);
-    (*regs)[11] = tswapreg(env->regs[R_EAX]); /* XXX */
+    (*regs)[11] = tswapreg(get_task_state(env_cpu_const(env))->orig_ax);
     (*regs)[12] = tswapreg(env->eip);
     (*regs)[13] = tswapreg(env->segs[R_CS].selector & 0xffff);
     (*regs)[14] = tswapreg(env->eflags);
@@ -659,6 +661,23 @@ static const char *get_elf_platform(void)
 #undef END
 }
 
+#if TARGET_BIG_ENDIAN
+#include "elf.h"
+#include "vdso-be8.c.inc"
+#include "vdso-be32.c.inc"
+
+static const VdsoImageInfo *vdso_image_info(uint32_t elf_flags)
+{
+    return (EF_ARM_EABI_VERSION(elf_flags) >= EF_ARM_EABI_VER4
+            && (elf_flags & EF_ARM_BE8)
+            ? &vdso_be8_image_info
+            : &vdso_be32_image_info);
+}
+#define vdso_image_info vdso_image_info
+#else
+# define VDSO_HEADER  "vdso-le.c.inc"
+#endif
+
 #else
 /* 64 bit ARM definitions */
 
@@ -958,13 +977,13 @@ const char *elf_hwcap2_str(uint32_t bit)
 
 #undef GET_FEATURE_ID
 
-#endif /* not TARGET_AARCH64 */
-
 #if TARGET_BIG_ENDIAN
 # define VDSO_HEADER  "vdso-be.c.inc"
 #else
 # define VDSO_HEADER  "vdso-le.c.inc"
 #endif
+
+#endif /* not TARGET_AARCH64 */
 
 #endif /* TARGET_ARM */
 
@@ -1647,21 +1666,6 @@ static uint32_t get_elf_hwcap(void)
 
 #endif
 
-#ifdef TARGET_CRIS
-
-#define ELF_CLASS ELFCLASS32
-#define ELF_ARCH  EM_CRIS
-
-static inline void init_thread(struct target_pt_regs *regs,
-                               struct image_info *infop)
-{
-    regs->erp = infop->entry;
-}
-
-#define ELF_EXEC_PAGESIZE        8192
-
-#endif
-
 #ifdef TARGET_M68K
 
 #define ELF_CLASS       ELFCLASS32
@@ -2117,7 +2121,7 @@ static inline void memcpy_fromfs(void * to, const void * from, unsigned long n)
     memcpy(to, from, n);
 }
 
-#ifdef BSWAP_NEEDED
+#if HOST_BIG_ENDIAN != TARGET_BIG_ENDIAN
 static void bswap_ehdr(struct elfhdr *ehdr)
 {
     bswap16s(&ehdr->e_type);            /* Object file type */
@@ -2913,7 +2917,7 @@ static uintptr_t pgb_try_itree(const PGBAddrs *ga, uintptr_t base,
 static uintptr_t pgb_find_itree(const PGBAddrs *ga, IntervalTreeRoot *root,
                                 uintptr_t align, uintptr_t brk)
 {
-    uintptr_t last = mmap_min_addr;
+    uintptr_t last = sizeof(uintptr_t) == 4 ? MiB : GiB;
     uintptr_t base, skip;
 
     while (true) {
@@ -3139,7 +3143,7 @@ static bool parse_elf_properties(const ImageSource *src,
      * The contents of a valid PT_GNU_PROPERTY is a sequence of uint32_t.
      * Swap most of them now, beyond the header and namesz.
      */
-#ifdef BSWAP_NEEDED
+#if HOST_BIG_ENDIAN != TARGET_BIG_ENDIAN
     for (int i = 4; i < n / 4; i++) {
         bswap32s(note.data + i);
     }
@@ -3194,7 +3198,8 @@ static void load_elf_image(const char *image_name, const ImageSource *src,
                            char **pinterp_name)
 {
     g_autofree struct elf_phdr *phdr = NULL;
-    abi_ulong load_addr, load_bias, loaddr, hiaddr, error;
+    abi_ulong load_addr, load_bias, loaddr, hiaddr, error, align;
+    size_t reserve_size, align_size;
     int i, prot_exec;
     Error *err = NULL;
 
@@ -3234,7 +3239,7 @@ static void load_elf_image(const char *image_name, const ImageSource *src,
      * amount of memory to handle that.  Locate the interpreter, if any.
      */
     loaddr = -1, hiaddr = 0;
-    info->alignment = 0;
+    align = 0;
     info->exec_stack = EXSTACK_DEFAULT;
     for (i = 0; i < ehdr->e_phnum; ++i) {
         struct elf_phdr *eppnt = phdr + i;
@@ -3252,7 +3257,7 @@ static void load_elf_image(const char *image_name, const ImageSource *src,
                 hiaddr = a;
             }
             ++info->nsegs;
-            info->alignment |= eppnt->p_align;
+            align |= eppnt->p_align;
         } else if (eppnt->p_type == PT_INTERP && pinterp_name) {
             g_autofree char *interp_name = NULL;
 
@@ -3282,6 +3287,8 @@ static void load_elf_image(const char *image_name, const ImageSource *src,
 
     load_addr = loaddr;
 
+    align = pow2ceil(align);
+
     if (pinterp_name != NULL) {
         if (ehdr->e_type == ET_EXEC) {
             /*
@@ -3290,8 +3297,6 @@ static void load_elf_image(const char *image_name, const ImageSource *src,
              */
             probe_guest_base(image_name, loaddr, hiaddr);
         } else {
-            abi_ulong align;
-
             /*
              * The binary is dynamic, but we still need to
              * select guest_base.  In this case we pass a size.
@@ -3309,10 +3314,7 @@ static void load_elf_image(const char *image_name, const ImageSource *src,
              * Since we do not have complete control over the guest
              * address space, we prefer the kernel to choose some address
              * rather than force the use of LOAD_ADDR via MAP_FIXED.
-             * But without MAP_FIXED we cannot guarantee alignment,
-             * only suggest it.
              */
-            align = pow2ceil(info->alignment);
             if (align) {
                 load_addr &= -align;
             }
@@ -3336,13 +3338,35 @@ static void load_elf_image(const char *image_name, const ImageSource *src,
      * In both cases, we will overwrite pages in this range with mappings
      * from the executable.
      */
-    load_addr = target_mmap(load_addr, (size_t)hiaddr - loaddr + 1, PROT_NONE,
+    reserve_size = (size_t)hiaddr - loaddr + 1;
+    align_size = reserve_size;
+
+    if (ehdr->e_type != ET_EXEC && align > qemu_real_host_page_size()) {
+        align_size += align - 1;
+    }
+
+    load_addr = target_mmap(load_addr, align_size, PROT_NONE,
                             MAP_PRIVATE | MAP_ANON | MAP_NORESERVE |
                             (ehdr->e_type == ET_EXEC ? MAP_FIXED_NOREPLACE : 0),
                             -1, 0);
     if (load_addr == -1) {
         goto exit_mmap;
     }
+
+    if (align_size != reserve_size) {
+        abi_ulong align_addr = ROUND_UP(load_addr, align);
+        abi_ulong align_end = TARGET_PAGE_ALIGN(align_addr + reserve_size);
+        abi_ulong load_end = TARGET_PAGE_ALIGN(load_addr + align_size);
+
+        if (align_addr != load_addr) {
+            target_munmap(load_addr, align_addr - load_addr);
+        }
+        if (align_end != load_end) {
+            target_munmap(align_end, load_end - align_end);
+        }
+        load_addr = align_addr;
+    }
+
     load_bias = load_addr - loaddr;
 
     if (elf_is_fdpic(ehdr)) {
@@ -3532,12 +3556,14 @@ static void load_elf_interp(const char *filename, struct image_info *info,
     load_elf_image(filename, &src, info, &ehdr, NULL);
 }
 
+#ifndef vdso_image_info
 #ifdef VDSO_HEADER
 #include VDSO_HEADER
-#define  vdso_image_info()  &vdso_image_info
+#define  vdso_image_info(flags)  &vdso_image_info
 #else
-#define  vdso_image_info()  NULL
-#endif
+#define  vdso_image_info(flags)  NULL
+#endif /* VDSO_HEADER */
+#endif /* vdso_image_info */
 
 static void load_elf_vdso(struct image_info *info, const VdsoImageInfo *vdso)
 {
@@ -3872,7 +3898,7 @@ int load_elf_binary(struct linux_binprm *bprm, struct image_info *info)
      * Load a vdso if available, which will amongst other things contain the
      * signal trampolines.  Otherwise, allocate a separate page for them.
      */
-    const VdsoImageInfo *vdso = vdso_image_info();
+    const VdsoImageInfo *vdso = vdso_image_info(info->elf_flags);
     if (vdso) {
         load_elf_vdso(&vdso_info, vdso);
         info->vdso = vdso_info.load_bias;
@@ -3911,7 +3937,6 @@ int load_elf_binary(struct linux_binprm *bprm, struct image_info *info)
 }
 
 #ifdef USE_ELF_CORE_DUMP
-#include "exec/translate-all.h"
 
 /*
  * Definitions to generate Intel SVR4-like core files.
@@ -3991,7 +4016,7 @@ struct target_elf_prpsinfo {
     char    pr_psargs[ELF_PRARGSZ]; /* initial part of arg list */
 };
 
-#ifdef BSWAP_NEEDED
+#if HOST_BIG_ENDIAN != TARGET_BIG_ENDIAN
 static void bswap_prstatus(struct target_elf_prstatus *prstatus)
 {
     prstatus->pr_info.si_signo = tswap32(prstatus->pr_info.si_signo);
@@ -4030,7 +4055,7 @@ static void bswap_note(struct elf_note *en)
 static inline void bswap_prstatus(struct target_elf_prstatus *p) { }
 static inline void bswap_psinfo(struct target_elf_prpsinfo *p) {}
 static inline void bswap_note(struct elf_note *en) { }
-#endif /* BSWAP_NEEDED */
+#endif /* HOST_BIG_ENDIAN != TARGET_BIG_ENDIAN */
 
 /*
  * Calculate file (dump) size of given memory region.
@@ -4040,6 +4065,10 @@ static size_t vma_dump_size(target_ulong start, target_ulong end,
 {
     /* The area must be readable. */
     if (!(flags & PAGE_READ)) {
+        return 0;
+    }
+
+    if (flags & PAGE_DONTDUMP) {
         return 0;
     }
 
@@ -4346,7 +4375,7 @@ static int wmr_write_region(void *opaque, target_ulong start,
  */
 static int elf_core_dump(int signr, const CPUArchState *env)
 {
-    const CPUState *cpu = env_cpu((CPUArchState *)env);
+    const CPUState *cpu = env_cpu_const(env);
     const TaskState *ts = (const TaskState *)get_task_state((CPUState *)cpu);
     struct rlimit dumpsize;
     CountAndSizeRegions css;

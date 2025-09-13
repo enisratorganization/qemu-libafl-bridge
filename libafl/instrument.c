@@ -2,7 +2,7 @@
 #include "tcg/tcg.h"
 #include "tcg/tcg-op.h"
 #include "tcg/tcg-temp-internal.h"
-#include "sysemu/runstate.h"
+#include "system/runstate.h"
 
 #include "cpu.h"
 #include "libafl/cpu.h"

@@ -15,16 +15,16 @@
 #include "qapi/error.h"
 #include "qapi/qapi-builtin-visit.h"
 #include "qapi/qapi-commands-machine.h"
-#include "qapi/qmp/qobject.h"
+#include "qobject/qobject.h"
 #include "qapi/qobject-input-visitor.h"
 #include "qapi/type-helpers.h"
 #include "qemu/uuid.h"
 #include "qom/qom-qobject.h"
-#include "sysemu/hostmem.h"
-#include "sysemu/hw_accel.h"
-#include "sysemu/numa.h"
-#include "sysemu/runstate.h"
-#include "sysemu/sysemu.h"
+#include "system/hostmem.h"
+#include "system/hw_accel.h"
+#include "system/numa.h"
+#include "system/runstate.h"
+#include "system/system.h"
 
 /*
  * fast means: we NEVER interrupt vCPU threads to retrieve
@@ -72,6 +72,7 @@ MachineInfoList *qmp_query_machines(bool has_compat_props, bool compat_props,
 
     for (el = machines; el; el = el->next) {
         MachineClass *mc = el->data;
+        const char *default_cpu_type = machine_class_default_cpu_type(mc);
         MachineInfo *info;
 
         info = g_malloc0(sizeof(*info));
@@ -90,8 +91,8 @@ MachineInfoList *qmp_query_machines(bool has_compat_props, bool compat_props,
         info->numa_mem_supported = mc->numa_mem_supported;
         info->deprecated = !!mc->deprecation_reason;
         info->acpi = !!object_class_property_find(OBJECT_CLASS(mc), "acpi");
-        if (mc->default_cpu_type) {
-            info->default_cpu_type = g_strdup(mc->default_cpu_type);
+        if (default_cpu_type) {
+            info->default_cpu_type = g_strdup(default_cpu_type);
         }
         if (mc->default_ram_id) {
             info->default_ram_id = g_strdup(mc->default_ram_id);

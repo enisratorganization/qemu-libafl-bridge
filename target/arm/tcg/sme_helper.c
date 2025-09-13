@@ -904,7 +904,7 @@ void HELPER(sme_addva_d)(void *vzda, void *vzn, void *vpn,
 }
 
 void HELPER(sme_fmopa_s)(void *vza, void *vzn, void *vzm, void *vpn,
-                         void *vpm, void *vst, uint32_t desc)
+                         void *vpm, float_status *fpst_in, uint32_t desc)
 {
     intptr_t row, col, oprsz = simd_maxsz(desc);
     uint32_t neg = simd_data(desc) << 31;
@@ -916,7 +916,7 @@ void HELPER(sme_fmopa_s)(void *vza, void *vzn, void *vzm, void *vpn,
      * update the cumulative fp exception status.  It also produces
      * default nans.
      */
-    fpst = *(float_status *)vst;
+    fpst = *fpst_in;
     set_default_nan_mode(true, &fpst);
 
     for (row = 0; row < oprsz; ) {
@@ -946,13 +946,13 @@ void HELPER(sme_fmopa_s)(void *vza, void *vzn, void *vzm, void *vpn,
 }
 
 void HELPER(sme_fmopa_d)(void *vza, void *vzn, void *vzm, void *vpn,
-                         void *vpm, void *vst, uint32_t desc)
+                         void *vpm, float_status *fpst_in, uint32_t desc)
 {
     intptr_t row, col, oprsz = simd_oprsz(desc) / 8;
     uint64_t neg = (uint64_t)simd_data(desc) << 63;
     uint64_t *za = vza, *zn = vzn, *zm = vzm;
     uint8_t *pn = vpn, *pm = vpm;
-    float_status fpst = *(float_status *)vst;
+    float_status fpst = *fpst_in;
 
     set_default_nan_mode(true, &fpst);
 
@@ -1005,25 +1005,55 @@ static float32 f16_dotadd(float32 sum, uint32_t e1, uint32_t e2,
      *  - we have pre-set-up copy of s_std which is set to round-to-odd,
      *    for the multiply (see below)
      */
-    float64 e1r = float16_to_float64(e1 & 0xffff, true, s_f16);
-    float64 e1c = float16_to_float64(e1 >> 16, true, s_f16);
-    float64 e2r = float16_to_float64(e2 & 0xffff, true, s_f16);
-    float64 e2c = float16_to_float64(e2 >> 16, true, s_f16);
-    float64 t64;
+    float16 h1r = e1 & 0xffff;
+    float16 h1c = e1 >> 16;
+    float16 h2r = e2 & 0xffff;
+    float16 h2c = e2 >> 16;
     float32 t32;
 
-    /*
-     * The ARM pseudocode function FPDot performs both multiplies
-     * and the add with a single rounding operation.  Emulate this
-     * by performing the first multiply in round-to-odd, then doing
-     * the second multiply as fused multiply-add, and rounding to
-     * float32 all in one step.
-     */
-    t64 = float64_mul(e1r, e2r, s_odd);
-    t64 = float64r32_muladd(e1c, e2c, t64, 0, s_std);
+    /* C.f. FPProcessNaNs4 */
+    if (float16_is_any_nan(h1r) || float16_is_any_nan(h1c) ||
+        float16_is_any_nan(h2r) || float16_is_any_nan(h2c)) {
+        float16 t16;
 
-    /* This conversion is exact, because we've already rounded. */
-    t32 = float64_to_float32(t64, s_std);
+        if (float16_is_signaling_nan(h1r, s_f16)) {
+            t16 = h1r;
+        } else if (float16_is_signaling_nan(h1c, s_f16)) {
+            t16 = h1c;
+        } else if (float16_is_signaling_nan(h2r, s_f16)) {
+            t16 = h2r;
+        } else if (float16_is_signaling_nan(h2c, s_f16)) {
+            t16 = h2c;
+        } else if (float16_is_any_nan(h1r)) {
+            t16 = h1r;
+        } else if (float16_is_any_nan(h1c)) {
+            t16 = h1c;
+        } else if (float16_is_any_nan(h2r)) {
+            t16 = h2r;
+        } else {
+            t16 = h2c;
+        }
+        t32 = float16_to_float32(t16, true, s_f16);
+    } else {
+        float64 e1r = float16_to_float64(h1r, true, s_f16);
+        float64 e1c = float16_to_float64(h1c, true, s_f16);
+        float64 e2r = float16_to_float64(h2r, true, s_f16);
+        float64 e2c = float16_to_float64(h2c, true, s_f16);
+        float64 t64;
+
+        /*
+         * The ARM pseudocode function FPDot performs both multiplies
+         * and the add with a single rounding operation.  Emulate this
+         * by performing the first multiply in round-to-odd, then doing
+         * the second multiply as fused multiply-add, and rounding to
+         * float32 all in one step.
+         */
+        t64 = float64_mul(e1r, e2r, s_odd);
+        t64 = float64r32_muladd(e1c, e2c, t64, 0, s_std);
+
+        /* This conversion is exact, because we've already rounded. */
+        t32 = float64_to_float32(t64, s_std);
+    }
 
     /* The final accumulation step is not fused. */
     return float32_add(sum, t32, s_std);
@@ -1038,13 +1068,13 @@ void HELPER(sme_fmopa_h)(void *vza, void *vzn, void *vzm, void *vpn,
     float_status fpst_odd, fpst_std, fpst_f16;
 
     /*
-     * Make copies of fp_status and fp_status_f16, because this operation
+     * Make copies of the fp status fields we use, because this operation
      * does not update the cumulative fp exception status.  It also
      * produces default NaNs. We also need a second copy of fp_status with
      * round-to-odd -- see above.
      */
-    fpst_f16 = env->vfp.fp_status_f16;
-    fpst_std = env->vfp.fp_status;
+    fpst_f16 = env->vfp.fp_status[FPST_A64_F16];
+    fpst_std = env->vfp.fp_status[FPST_A64];
     set_default_nan_mode(true, &fpst_std);
     set_default_nan_mode(true, &fpst_f16);
     fpst_odd = fpst_std;
@@ -1079,38 +1109,68 @@ void HELPER(sme_fmopa_h)(void *vza, void *vzn, void *vzm, void *vpn,
     }
 }
 
-void HELPER(sme_bfmopa)(void *vza, void *vzn, void *vzm, void *vpn,
-                        void *vpm, uint32_t desc)
+void HELPER(sme_bfmopa)(void *vza, void *vzn, void *vzm,
+                        void *vpn, void *vpm, CPUARMState *env, uint32_t desc)
 {
     intptr_t row, col, oprsz = simd_maxsz(desc);
     uint32_t neg = simd_data(desc) * 0x80008000u;
     uint16_t *pn = vpn, *pm = vpm;
+    float_status fpst, fpst_odd;
 
-    for (row = 0; row < oprsz; ) {
-        uint16_t prow = pn[H2(row >> 4)];
-        do {
-            void *vza_row = vza + tile_vslice_offset(row);
-            uint32_t n = *(uint32_t *)(vzn + H1_4(row));
+    if (is_ebf(env, &fpst, &fpst_odd)) {
+        for (row = 0; row < oprsz; ) {
+            uint16_t prow = pn[H2(row >> 4)];
+            do {
+                void *vza_row = vza + tile_vslice_offset(row);
+                uint32_t n = *(uint32_t *)(vzn + H1_4(row));
 
-            n = f16mop_adj_pair(n, prow, neg);
+                n = f16mop_adj_pair(n, prow, neg);
 
-            for (col = 0; col < oprsz; ) {
-                uint16_t pcol = pm[H2(col >> 4)];
-                do {
-                    if (prow & pcol & 0b0101) {
-                        uint32_t *a = vza_row + H1_4(col);
-                        uint32_t m = *(uint32_t *)(vzm + H1_4(col));
+                for (col = 0; col < oprsz; ) {
+                    uint16_t pcol = pm[H2(col >> 4)];
+                    do {
+                        if (prow & pcol & 0b0101) {
+                            uint32_t *a = vza_row + H1_4(col);
+                            uint32_t m = *(uint32_t *)(vzm + H1_4(col));
 
-                        m = f16mop_adj_pair(m, pcol, 0);
-                        *a = bfdotadd(*a, n, m);
-                    }
-                    col += 4;
-                    pcol >>= 4;
-                } while (col & 15);
-            }
-            row += 4;
-            prow >>= 4;
-        } while (row & 15);
+                            m = f16mop_adj_pair(m, pcol, 0);
+                            *a = bfdotadd_ebf(*a, n, m, &fpst, &fpst_odd);
+                        }
+                        col += 4;
+                        pcol >>= 4;
+                    } while (col & 15);
+                }
+                row += 4;
+                prow >>= 4;
+            } while (row & 15);
+        }
+    } else {
+        for (row = 0; row < oprsz; ) {
+            uint16_t prow = pn[H2(row >> 4)];
+            do {
+                void *vza_row = vza + tile_vslice_offset(row);
+                uint32_t n = *(uint32_t *)(vzn + H1_4(row));
+
+                n = f16mop_adj_pair(n, prow, neg);
+
+                for (col = 0; col < oprsz; ) {
+                    uint16_t pcol = pm[H2(col >> 4)];
+                    do {
+                        if (prow & pcol & 0b0101) {
+                            uint32_t *a = vza_row + H1_4(col);
+                            uint32_t m = *(uint32_t *)(vzm + H1_4(col));
+
+                            m = f16mop_adj_pair(m, pcol, 0);
+                            *a = bfdotadd(*a, n, m, &fpst);
+                        }
+                        col += 4;
+                        pcol >>= 4;
+                    } while (col & 15);
+                }
+                row += 4;
+                prow >>= 4;
+            } while (row & 15);
+        }
     }
 }
 

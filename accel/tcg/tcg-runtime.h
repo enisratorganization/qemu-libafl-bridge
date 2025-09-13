@@ -323,16 +323,3 @@ DEF_HELPER_FLAGS_4(gvec_leus32, TCG_CALL_NO_RWG, void, ptr, ptr, i64, i32)
 DEF_HELPER_FLAGS_4(gvec_leus64, TCG_CALL_NO_RWG, void, ptr, ptr, i64, i32)
 
 DEF_HELPER_FLAGS_5(gvec_bitsel, TCG_CALL_NO_RWG, void, ptr, ptr, ptr, ptr, i32)
-
-//// --- Begin LibAFL code ---
-
-DEF_HELPER_FLAGS_2(libafl_qemu_handle_breakpoint, TCG_CALL_NO_RWG,
-                    void, env, i64)
-
-/* Flags==0 meaning anything could happen */
-DEF_HELPER_FLAGS_1(libafl_qemu_handle_instrument, 0, void, env)
-
-DEF_HELPER_FLAGS_3(libafl_qemu_handle_custom_insn, TCG_CALL_NO_RWG,
-                    void, env, i64, i32)
-
-//// --- End LibAFL code ---
