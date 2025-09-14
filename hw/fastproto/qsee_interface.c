@@ -123,5 +123,5 @@ bool hook_qsee_start(CPUState *cs, vaddr pc, void *opaque) {
 
     // Remove HYP from qsee interface
     remove_hyp(cs, &qi);
-    return true;
+    return false;
 }

@@ -39,7 +39,7 @@ static bool disable_mmu_before_ttbr0_set(CPUState *cs, vaddr pc, void *opaque)
     cpu->env.cp15.sctlr_ns &= 0xFFFFFFFFFFFFFFFE; // disable MMU
     tlb_flush(cs);
     arm_rebuild_hflags(&cpu->env);
-    return true;
+    return false;
 }
 
 static bool set_rpmh_is_standalone(CPUState *cs, vaddr pc, void *opaque)

@@ -410,10 +410,6 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
     cpu->neg.can_do_io = true;
     cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
 
-    //// --- Begin LibAFL code ---
-    libafl_reset_last_instrument_state(cpu, pc);
-    //// --- End LibAFL code ---
-
     cflags = curr_cflags(cpu);
     if (check_for_breakpoints(cpu, pc, &cflags)) {
         cpu_loop_exit(cpu);
@@ -986,10 +982,6 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
 
             cpu_get_tb_cpu_state(cpu_env(cpu), &pc, &cs_base, &flags);
 
-
-            //// --- Begin LibAFL code ---
-            libafl_reset_last_instrument_state(cpu, pc);
-            //// --- End LibAFL code ---
 
             /*
              * When requested, use an exact setting for cflags for the next

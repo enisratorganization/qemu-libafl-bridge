@@ -580,7 +580,6 @@ void qemu_cond_timedwait_bql(QemuCond *cond, int ms)
 void cpu_thread_signal_created(CPUState *cpu)
 {
     cpu->created = true;
-    cpu->last_instrumented_pc_addr = -1;
     qemu_cond_signal(&qemu_cpu_cond);
 }
 

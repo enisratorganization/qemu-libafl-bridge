@@ -9,25 +9,16 @@
 
 /**
  * Return true iff cpu_loop_exit_...(...) should be called.
- * This means, if you onyl change GP registers or flags or write Memory
- * without changing Control Flow, you may return false.
+ * This means, if you only change GP registers or flags or write Memory
+ * without changing Control Flow, you MUST return false.
+ * The current TCG TB will continue.
  * 
- * If you change Control Flow (e.g. return from subroutine or exceptions), 
- * then you should return true.
- * 
+ * If you change Control Flow (e.g. ealry return from subroutine or exceptions), 
+ * then you MUST return true.
 */
 typedef bool (*InstrumentCallback) (CPUState *cs, vaddr pc, void *opaque);
 
 void libafl_qemu_handle_instrument(CPUArchState *env);
-
-/**
- * @brief If an instrumentation breakpoint was handled, but execution has progressed,
- * we still need to reset last_instrumented_pc_addr
- */
-static inline void libafl_reset_last_instrument_state(CPUState* cpu, vaddr cur_pc) {
-	if(cur_pc != cpu->last_instrumented_pc_addr)
-        cpu->last_instrumented_pc_addr = -1;
-};
 
 /*
  * Is the PC for a given vCPU really instrumented?

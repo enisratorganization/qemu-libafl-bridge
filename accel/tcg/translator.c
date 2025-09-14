@@ -197,10 +197,6 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
         if( check_instrument(db->pc_next, cpu->cpu_index)) {
             if( db->pc_next == db->pc_first ){
                 gen_helper_libafl_qemu_handle_instrument(tcg_env);
-                if (tcg_ctx->exitreq_label == NULL) {
-                    /* This trick will leave the TB with TB_EXIT_REQUESTED -> Thus no TB chaining will happen */
-                    tcg_ctx->exitreq_label = gen_new_label();
-                }
             } else {
                 break;
             }

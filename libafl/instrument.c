@@ -40,14 +40,11 @@ void libafl_qemu_handle_instrument(CPUArchState *env) {
 	 */
 	vaddr pc = cpu->cc->get_pc(cpu);
 
-	if( cpu->last_instrumented_pc_addr != pc ){
-		if( unlikely(call_instrument_cb(cpu, pc)) ) {
-			/* Instrument hook indicates state has changed */
-			cpu_loop_exit(cpu);
-		}
-	} else {
-        cpu->last_instrumented_pc_addr = -1;
-    }
+	if( unlikely(call_instrument_cb(cpu, pc)) ) {
+		/* Instrument hook indicates state has changed */
+		cpu_loop_exit(cpu);
+	}
+	/* Otherwise, execution can continue like normal (just like any helper call)*/
 }
 
 static bool pc_is_instrumented(const void *p, const void *d) {
@@ -95,7 +92,6 @@ bool call_instrument_cb(CPUState *cs, vaddr pc) {
 			qht_lookup_custom(&htable, &desc, QHT_PC_HASH(pc), pc_is_instrumented);
 
 		if (b != NULL) {
-			cs->last_instrumented_pc_addr = pc;
 			return b->cb(cs, pc, b->opaque);
 		} else {
 			return false;
