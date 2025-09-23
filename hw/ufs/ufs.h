@@ -11,8 +11,7 @@
 #ifndef HW_UFS_UFS_H
 #define HW_UFS_UFS_H
 
-#include "hw/sysbus.h"
-#include "system/dma.h"
+#include "hw/pci/pci_device.h"
 #include "hw/scsi/scsi.h"
 #include "block/ufs.h"
 
@@ -120,7 +119,7 @@ typedef struct UfsCq {
 } UfsCq;
 
 typedef struct UfsHc {
-    SysBusDevice parent_obj;
+    PCIDevice parent_obj;
     UfsBus bus;
     MemoryRegion iomem;
     UfsReg reg;
@@ -133,7 +132,7 @@ typedef struct UfsHc {
     UfsLu *lus[UFS_MAX_LUS];
     UfsLu report_wlu;
     UfsLu dev_wlu;
-    UfsLu *boot_wlu;
+    UfsLu boot_wlu;
     UfsLu rpmb_wlu;
     DeviceDescriptor device_desc;
     GeometryDescriptor geometry_desc;

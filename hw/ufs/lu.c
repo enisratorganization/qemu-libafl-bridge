@@ -16,7 +16,6 @@
 #include "scsi/constants.h"
 #include "system/block-backend.h"
 #include "qemu/cutils.h"
-#include "migration/vmstate.h"
 #include "trace.h"
 #include "ufs.h"
 
@@ -233,10 +232,8 @@ static UfsReqResult ufs_emulate_scsi_cmd(UfsLu *lu, UfsRequest *req)
         }
         /* fallthrough */
     default:
-        len = scsi_build_sense_buf(outbuf, sizeof(outbuf), SENSE_CODE(NO_SENSE),
-                                   true);
-        scsi_status = GOOD;
-        break;
+        scsi_build_sense(sense_buf, SENSE_CODE(INVALID_OPCODE));
+        scsi_status = CHECK_CONDITION;
     }
 
     len = MIN(len, (int)req->data_len);
@@ -299,13 +296,6 @@ static bool ufs_add_lu(UfsHc *u, UfsLu *lu, Error **errp)
         return false;
     }
 
-    if( lu->lun == 7 ) { /* BOOT LUN config*/
-        lu->unit_desc.boot_lun_id = 1;
-        lu->unit_desc.lu_enable = 1;
-        u->device_desc.boot_enable = 1;
-        u->attributes.boot_lun_en = 1;
-        u->boot_wlu = lu;
-    }
     u->lus[lu->lun] = lu;
     u->device_desc.number_lu++;
     raw_dev_cap += (brdv_len >> UFS_GEOMETRY_CAPACITY_SHIFT);
@@ -429,19 +419,6 @@ static void ufs_lu_unrealize(DeviceState *dev)
     }
 }
 
-#define FIELD_SIZEOF(t, f) (sizeof(((t*)0)->f))
-
-static const VMStateDescription vmstate_ufs_lu = {
-    .name = "ufs-lu",
-    .version_id = 1,
-    .minimum_version_id = 1,
-    .fields = (const VMStateField[]) {
-        VMSTATE_UINT8(lun, UfsLu),
-        VMSTATE_BUFFER_UNSAFE_INFO_TEST(unit_desc, UfsLu, 0, 1, vmstate_info_buffer, FIELD_SIZEOF(UfsLu, unit_desc)),
-        VMSTATE_END_OF_LIST()
-    }
-};
-
 static void ufs_lu_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
@@ -451,7 +428,6 @@ static void ufs_lu_class_init(ObjectClass *oc, void *data)
     dc->bus_type = TYPE_UFS_BUS;
     device_class_set_props(dc, ufs_lu_props);
     dc->desc = "Virtual UFS logical unit";
-    dc->vmsd = &vmstate_ufs_lu;
 }
 
 static const TypeInfo ufs_lu_info = {
