@@ -16,54 +16,81 @@
 
 __thread void *current_disasctx=0; 
 
-static inline uint32_t crc32_i64(uint64_t in) {
+static inline uint32_t crc32_i64(uint32_t total, uint64_t in) {
 #if (defined(__x86_64__) || defined(__i386__))
- 	return (uint32_t)_mm_crc32_u64(0, in);
+ 	return (uint32_t)_mm_crc32_u64(total, in);
 #else
 	#error "TODO: Define CRC32 when no _mm_crc32_u64 instruction (x86) is available"
 #endif
-}
-
-static inline int get_same_bytes_i64(uint64_t a1, uint64_t a2) {
-	uint64_t cmp = a1 ^ a2;
-
-	int ctr = 0;
-	for(int i=0; i<8; i++) {
-		ctr += ((cmp & 0xff) == 0);
-		cmp >>= 8;
-	}
-	return ctr;
 }
 
 /**
  * @brief Get index for the CMP Coverage hitmap from the CPU state and the JIT-compiletime pc_diff.
  * 
  */
-static inline uint32_t get_index_i64(CPUState *cpu, uint64_t pc_diff) {
-	return crc32_i64( cpu->cc->get_pc(cpu) + pc_diff ) & cpu->neg.coverage_rec.comp_rec.mask;
+static inline uint32_t get_index_i64(CPUState *cpu, uint64_t pc_diff, uint32_t edgeid) {
+	return crc32_i64( edgeid, cpu->cc->get_pc(cpu) + pc_diff ) & cpu->neg.coverage_rec.comp_rec.mask;
 }
 
 /**
- * @brief Helper to record equal byte values of 64-bit "compare" (or SUB) operations.
+ * @brief Generate pseudo "edges" for each matching position of a CMP insn.
+ * Using all bit positions is too fine grained, using byte (8-bit) groups is not much advantegeous.
+ * Thus use nibble-grained pseudo-edges (4-bit group).
+ */
+static inline void gen_cmp_edges(CPUState *cpu, uint64_t pc_diff, int how_many_bytes, uint64_t a1, uint64_t a2) {
+	uint32_t cmp_idx = get_index_i64(cpu, pc_diff, 0);
+
+	uint32_t ctr = 0;
+	uint32_t trailing_zeroes = 0;	
+	for (int i = 0; i < how_many_bytes*2; i++)
+	{
+		uint32_t eq = ((a1 & 0xf) == (a2 & 0xf));
+		ctr += eq;
+		trailing_zeroes += eq;
+		trailing_zeroes &= ~((((a1 & 0xf) == 0) && eq) - 1);
+		a1 >>= 4;
+		a2 >>= 4;
+	}
+
+	((uint8_t*)cpu->neg.coverage_rec.comp_rec.rec_buf_hitmap)[ cmp_idx ] += ctr;
+
+	// generate more edge hits for the scheduler (LibAFL) to prefer testcases.
+	// trailing zeroes are too common in numerical compares. Do not pollute edge map with them
+	for (uint32_t i = 1; i < ctr - trailing_zeroes; i++){
+		((uint8_t *)cpu->neg.coverage_rec.comp_rec.rec_buf_hitmap)[get_index_i64(cpu, pc_diff, i << 27)] += ctr - trailing_zeroes;
+	};
+}
+
+/**
+ * @brief Helper to record equal byte values of up to 64-bit "compare" (or SUB/SUBS) operations.
+ * It then uses the hashed PC as an index into a hasmap and increments that entry.
  * 
  */
-void HELPER(record_cmp_i64_u8)(CPUArchState *env, uint64_t pc_diff, uint64_t a1, uint64_t a2)
+void HELPER(record_cmp_i64_u8_mo8)(CPUArchState *env, uint64_t pc_diff, uint64_t a1, uint64_t a2)
 {
     CPUState *cpu = env_cpu(env);
 
-	((uint8_t*)cpu->neg.coverage_rec.comp_rec.rec_buf_hitmap)[ get_index_i64(cpu, pc_diff) ] += (uint8_t)get_same_bytes_i64(a1, a2);
+	gen_cmp_edges(cpu, pc_diff, 1, a1, a2);
 }
 
-void HELPER(record_cmp_i64_u16)(CPUArchState *env, uint64_t pc_diff, uint64_t a1, uint64_t a2)
-{
-    CPUState *cpu = env_cpu(env);
-
-	((uint16_t*)cpu->neg.coverage_rec.comp_rec.rec_buf_hitmap)[ get_index_i64(cpu, pc_diff) ] += (uint16_t)get_same_bytes_i64(a1, a2);
-}
-
-void HELPER(record_cmp_i64_u32)(CPUArchState *env, uint64_t pc_diff, uint64_t a1, uint64_t a2)
+void HELPER(record_cmp_i64_u8_mo16)(CPUArchState *env, uint64_t pc_diff, uint64_t a1, uint64_t a2)
 {
 	CPUState *cpu = env_cpu(env);
 
-	((uint32_t*)cpu->neg.coverage_rec.comp_rec.rec_buf_hitmap)[ get_index_i64(cpu, pc_diff) ] += (uint32_t)get_same_bytes_i64(a1, a2);
+	gen_cmp_edges(cpu, pc_diff, 2, a1, a2);
+}
+
+
+void HELPER(record_cmp_i64_u8_mo32)(CPUArchState *env, uint64_t pc_diff, uint64_t a1, uint64_t a2)
+{
+	CPUState *cpu = env_cpu(env);
+
+	gen_cmp_edges(cpu, pc_diff, 4, a1, a2);
+}
+
+void HELPER(record_cmp_i64_u8_mo64)(CPUArchState *env, uint64_t pc_diff, uint64_t a1, uint64_t a2)
+{
+	CPUState *cpu = env_cpu(env);
+
+	gen_cmp_edges(cpu, pc_diff, 8, a1, a2);
 }

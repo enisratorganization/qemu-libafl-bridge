@@ -4078,7 +4078,7 @@ static void gen_SUB(DisasContext *s, X86DecodedInsn *decode)
 
 //// --- Begin LibAFL code ---
 
-        libafl_gen_cmp(s->pc, s->T0, s->T1, ot);
+        libafl_gen_cmp(tcg_env, s->pc, (s->pc-s->pc_save), s->T0, s->T1, ot);
 
 //// --- End LibAFL code ---
 

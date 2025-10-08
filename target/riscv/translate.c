@@ -128,7 +128,7 @@ static inline bool has_ext(DisasContext *ctx, uint32_t ext)
 
 //// --- Begin LibAFL code ---
 
-void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
+void libafl_gen_cmp(TCGv_ptr tcg_env, target_ulong pc, target_ulong pc_diff, TCGv op0, TCGv op1, MemOp ot);
 
 //// --- End LibAFL code ---
 
@@ -943,7 +943,7 @@ static bool gen_arith_imm_tl(DisasContext *ctx, arg_i *a, DisasExtend ext,
 
         if (func == gen_slt || func == gen_sltu) {
             MemOp memop = get_ol(ctx) == MXL_RV32 ? MO_32 : MO_64;
-            libafl_gen_cmp(ctx->base.pc_next, src1, src2, memop);
+            libafl_gen_cmp(tcg_env, ctx->base.pc_next, (ctx->base.pc_next-ctx->pc_save), src1, src2, memop);
         }
 
         //// --- End LibAFL code ---
@@ -979,7 +979,7 @@ static bool gen_arith(DisasContext *ctx, arg_r *a, DisasExtend ext,
 
         if (func == gen_slt || func == gen_sltu) {
             MemOp memop = get_ol(ctx) == MXL_RV32 ? MO_32 : MO_64;
-            libafl_gen_cmp(ctx->base.pc_next, src1, src2, memop);
+            libafl_gen_cmp(tcg_env, ctx->base.pc_next, (ctx->base.pc_next-ctx->pc_save), src1, src2, memop);
         }
 
         //// --- End LibAFL code ---

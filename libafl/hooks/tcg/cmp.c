@@ -1,7 +1,9 @@
 #include "libafl/tcg.h"
 #include "libafl/hooks/tcg/cmp.h"
 
-static struct libafl_cmp_hook* libafl_cmp_hooks;
+#include "tcg/coverage-tcg-helper-gen.h"
+
+static struct libafl_cmp_hook* libafl_cmp_hooks = NULL;
 static size_t libafl_cmp_hooks_num = 0;
 
 static TCGHelperInfo libafl_exec_cmp_hook1_info = {
@@ -72,25 +74,22 @@ size_t libafl_add_cmp_hook(libafl_cmp_gen_cb gen_cb,
     return hook->num;
 }
 
-void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot)
+void libafl_gen_cmp(TCGv_ptr env, target_ulong pc, target_ulong pc_diff, TCGv op0, TCGv op1, MemOp ot)
 {
-    size_t size = 0;
-    switch (ot & MO_SIZE) {
-    case MO_64:
-        size = 8;
-        break;
-    case MO_32:
-        size = 4;
-        break;
-    case MO_16:
-        size = 2;
-        break;
-    case MO_8:
-        size = 1;
-        break;
-    default:
-        return;
+    size_t size = 1<<(ot&MO_SIZE);
+
+    // BEGIN comp coverage using hitmap
+    if( comp_coverage_record_tcg_enabled ) {
+        if(size == 1)
+            gen_helper_record_cmp_i64_u8_mo8(env, tcg_constant_i64(pc_diff), op0, op1);
+        else if(size == 2)
+            gen_helper_record_cmp_i64_u8_mo16(env, tcg_constant_i64(pc_diff), op0, op1);
+        else if(size == 4)
+            gen_helper_record_cmp_i64_u8_mo32(env, tcg_constant_i64(pc_diff), op0, op1);
+        else if(size == 8)
+            gen_helper_record_cmp_i64_u8_mo64(env, tcg_constant_i64(pc_diff), op0, op1);
     }
+    // END comp coverage using hitmap
 
     struct libafl_cmp_hook* hook = libafl_cmp_hooks;
     while (hook) {

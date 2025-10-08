@@ -3803,7 +3803,7 @@ static bool store_reg_kind(DisasContext *s, int rd,
 
 //// --- Begin LibAFL code ---
 
-void libafl_gen_cmp(target_ulong pc, TCGv op0, TCGv op1, MemOp ot);
+void libafl_gen_cmp(TCGv_ptr env, target_ulong pc, target_ulong pc_diff, TCGv op0, TCGv op1, MemOp ot);
 
 //// --- End LibAFL code ---
 
@@ -3831,9 +3831,9 @@ static bool op_s_rrr_shi(DisasContext *s, arg_s_rrr_shi *a,
       TCGv tmp2_64 = tcg_temp_new();
       tcg_gen_extu_i32_i64(tmp1_64, tmp1);
       tcg_gen_extu_i32_i64(tmp2_64, tmp2);
-      libafl_gen_cmp(s->pc_curr, tmp1_64, tmp2_64, MO_32);
+      libafl_gen_cmp(tcg_env, s->pc_curr, (s->pc_curr-s->pc_save), tmp1_64, tmp2_64, MO_32);
 #else
-      libafl_gen_cmp(s->pc_curr, tmp1, tmp2, MO_32);
+      libafl_gen_cmp(tcg_env, s->pc_curr, (s->pc_curr-s->pc_save), tmp1, tmp2, MO_32);
 #endif
     }
 
@@ -3943,9 +3943,9 @@ static bool op_s_rri_rot(DisasContext *s, arg_s_rri_rot *a,
       TCGv tmp2_64 = tcg_temp_new();
       tcg_gen_extu_i32_i64(tmp1_64, tmp1);
       tcg_gen_extu_i32_i64(tmp2_64, tcg_constant_i32(imm));
-      libafl_gen_cmp(s->pc_curr, tmp1_64, tmp2_64, MO_32);
+      libafl_gen_cmp(tcg_env, s->pc_curr, (s->pc_curr-s->pc_save), tmp1_64, tmp2_64, MO_32);
 #else
-      libafl_gen_cmp(s->pc_curr, tmp1, tcg_constant_i32(imm), MO_32);
+      libafl_gen_cmp(tcg_env, s->pc_curr, (s->pc_curr-s->pc_save), tmp1, tcg_constant_i32(imm), MO_32);
 #endif
     }
 
