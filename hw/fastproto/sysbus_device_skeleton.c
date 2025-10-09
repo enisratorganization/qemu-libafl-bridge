@@ -45,7 +45,7 @@ struct devxyzState {
 
 };
 
-static Property devxyz_properties[] = {
+static const Property devxyz_properties[] = {
     DEFINE_PROP_CHR("prop_chr", devxyzState, prop_chr),
     DEFINE_PROP_STRING("prop_str", devxyzState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", devxyzState, prop_uint64, 0),
