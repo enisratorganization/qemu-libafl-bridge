@@ -42,7 +42,7 @@ struct qcom_rngState {
 	uint32_t state[0x148/4];
 };
 
-static Property qcom_rng_properties[] = {
+static const Property qcom_rng_properties[] = {
     DEFINE_PROP_STRING("prop_char", qcom_rngState, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", qcom_rngState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_rngState, prop_bool, 0),

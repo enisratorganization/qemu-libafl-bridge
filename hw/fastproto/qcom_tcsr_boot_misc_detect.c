@@ -45,7 +45,7 @@ struct qcom_tcsr_boot_misc_detectState
     /* members below this point are SAVED in the vmstate */
 };
 
-static Property qcom_tcsr_boot_misc_detect_properties[] = {
+static const Property qcom_tcsr_boot_misc_detect_properties[] = {
     DEFINE_PROP_CHR("prop_chr", qcom_tcsr_boot_misc_detectState, prop_chr),
     DEFINE_PROP_STRING("prop_str", qcom_tcsr_boot_misc_detectState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", qcom_tcsr_boot_misc_detectState, prop_uint64, 0),

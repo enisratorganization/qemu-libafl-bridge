@@ -45,7 +45,7 @@ struct qcom_timer1State {
 
 };
 
-static Property qcom_timer1_properties[] = {
+static const Property qcom_timer1_properties[] = {
     DEFINE_PROP_CHR("prop_chr", qcom_timer1State, prop_chr),
     DEFINE_PROP_STRING("prop_str", qcom_timer1State, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", qcom_timer1State, prop_uint64, 0),

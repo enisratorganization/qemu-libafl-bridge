@@ -42,7 +42,7 @@ struct qcom_gpll4_modeState {
 
 };
 
-static Property qcom_gpll4_mode_properties[] = {
+static const Property qcom_gpll4_mode_properties[] = {
     DEFINE_PROP_STRING("prop_char", qcom_gpll4_modeState, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", qcom_gpll4_modeState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_gpll4_modeState, prop_bool, 0),

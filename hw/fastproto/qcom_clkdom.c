@@ -45,7 +45,7 @@ struct qcom_clkdomState {
 
 };
 
-static Property qcom_clkdom_properties[] = {
+static const Property qcom_clkdom_properties[] = {
     DEFINE_PROP_CHR("prop_chr", qcom_clkdomState, prop_chr),
     DEFINE_PROP_STRING("prop_str", qcom_clkdomState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", qcom_clkdomState, prop_uint64, 0),

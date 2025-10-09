@@ -42,7 +42,7 @@ struct qcom_0xc230000State {
 
 };
 
-static Property qcom_0xc230000_properties[] = {
+static const Property qcom_0xc230000_properties[] = {
     DEFINE_PROP_STRING("prop_char", qcom_0xc230000State, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", qcom_0xc230000State, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_0xc230000State, prop_bool, 0),

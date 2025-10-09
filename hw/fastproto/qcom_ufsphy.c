@@ -45,7 +45,7 @@ struct qcom_ufsphyState {
 
 };
 
-static Property qcom_ufsphy_properties[] = {
+static const Property qcom_ufsphy_properties[] = {
     DEFINE_PROP_CHR("prop_chr", qcom_ufsphyState, prop_chr),
     DEFINE_PROP_STRING("prop_str", qcom_ufsphyState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", qcom_ufsphyState, prop_uint64, 0),

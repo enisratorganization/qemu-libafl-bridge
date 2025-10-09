@@ -45,7 +45,7 @@ struct qcom_tcsr_wonceState {
     uint32_t state[0x100 >> 2];
 };
 
-static Property qcom_tcsr_wonce_properties[] = {
+static const Property qcom_tcsr_wonce_properties[] = {
     DEFINE_PROP_CHR("prop_chr", qcom_tcsr_wonceState, prop_chr),
     DEFINE_PROP_STRING("prop_str", qcom_tcsr_wonceState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", qcom_tcsr_wonceState, prop_uint64, 0),

@@ -42,7 +42,7 @@ struct qcom_pimem_ramblurState {
     uint32_t state[0x1100/4];
 };
 
-static Property qcom_pimem_ramblur_properties[] = {
+static const Property qcom_pimem_ramblur_properties[] = {
     DEFINE_PROP_STRING("prop_char", qcom_pimem_ramblurState, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", qcom_pimem_ramblurState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_pimem_ramblurState, prop_bool, 0),

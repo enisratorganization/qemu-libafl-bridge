@@ -45,7 +45,7 @@ struct qcom_smmuState {
 
 };
 
-static Property qcom_smmu_properties[] = {
+static const Property qcom_smmu_properties[] = {
     DEFINE_PROP_CHR("prop_chr", qcom_smmuState, prop_chr),
     DEFINE_PROP_STRING("prop_str", qcom_smmuState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", qcom_smmuState, prop_uint64, 0),

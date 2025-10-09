@@ -46,7 +46,7 @@ struct qcom_qupState {
     int nextlen;
 };
 
-static Property qcom_qup_properties[] = {
+static const Property qcom_qup_properties[] = {
     DEFINE_PROP_CHR("prop_chr", qcom_qupState, prop_chr),
     DEFINE_PROP_STRING("prop_char", qcom_qupState, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", qcom_qupState, prop_uint64, 0),

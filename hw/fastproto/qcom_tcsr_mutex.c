@@ -45,7 +45,7 @@ struct qcom_tcsr_mutexState {
     uint32_t state[(0x1000*10) >>2];    //@TODO: Optimize size
 };
 
-static Property qcom_tcsr_mutex_properties[] = {
+static const Property qcom_tcsr_mutex_properties[] = {
     DEFINE_PROP_CHR("prop_chr", qcom_tcsr_mutexState, prop_chr),
     DEFINE_PROP_STRING("prop_str", qcom_tcsr_mutexState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", qcom_tcsr_mutexState, prop_uint64, 0),

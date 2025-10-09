@@ -42,7 +42,7 @@ struct qcom_mpm2_sleepctrState {
     uint32_t ctr;
 };
 
-static Property qcom_mpm2_sleepctr_properties[] = {
+static const Property qcom_mpm2_sleepctr_properties[] = {
     DEFINE_PROP_STRING("prop_char", qcom_mpm2_sleepctrState, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", qcom_mpm2_sleepctrState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_mpm2_sleepctrState, prop_bool, 0),

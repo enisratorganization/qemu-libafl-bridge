@@ -42,7 +42,7 @@ struct qcom_qfpromState
     /* members below this point are SAVED in the vmstate */
 };
 
-static Property qcom_qfprom_properties[] = {
+static const Property qcom_qfprom_properties[] = {
     DEFINE_PROP_STRING("prop_char", qcom_qfpromState, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", qcom_qfpromState, prop_uint64, 0),
     DEFINE_PROP_BOOL("prop_bool", qcom_qfpromState, prop_bool, 0),
