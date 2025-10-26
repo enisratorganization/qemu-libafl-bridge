@@ -3,11 +3,18 @@
 
 struct tcg_arm_edge_coverage {
 	    
-    /* We try not to record "mov pc, lr":
-	 * In store_reg(), iff the src register is LR, we
-     * want to exclude it from edge recording
+    /* We try not to record "mov pc, lr", "ldm lr, pc, ... [sp]"
+     * as these are very likely function return insns.
+     * Semantically, store_reg_probably_ret is true:
+	 * - if the src register is LR for BX or MOV
+     * - in case of ldr, ldm
+     * It will be false:
+     * - For TBB
+     * - For BX (other than BX LR)
+     * 
+     * Reset to false in ops->insn_start()
      */
-    bool src_var_is_LR;
+    bool store_reg_probably_ret;
 
     /* To avoid double recording of conditional insns with the same flags.
      * last_cc is a bitmask with the last condition code checked.
