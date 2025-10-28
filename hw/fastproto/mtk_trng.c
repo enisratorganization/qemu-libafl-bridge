@@ -45,11 +45,11 @@ struct mtk_trngState {
 
 };
 
-static Property mtk_trng_properties[] = {
+static const Property mtk_trng_properties[] = {
     DEFINE_PROP_CHR("prop_chr", mtk_trngState, prop_chr),
     DEFINE_PROP_STRING("prop_str", mtk_trngState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", mtk_trngState, prop_uint64, 0),
-    DEFINE_PROP_BOOL("prop_bool", mtk_trngState, prop_bool, 0),
+    DEFINE_PROP_BOOL("prop_bool", mtk_trngState, prop_bool, 0)
 };
 
 /**

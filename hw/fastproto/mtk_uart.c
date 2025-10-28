@@ -46,11 +46,11 @@ struct mtk_uartState {
     int nextlen;
 };
 
-static Property mtk_uart_properties[] = {
+static const Property mtk_uart_properties[] = {
     DEFINE_PROP_CHR("prop_chr", mtk_uartState, prop_chr),
     DEFINE_PROP_STRING("prop_char", mtk_uartState, prop_char),
     DEFINE_PROP_UINT64("prop_uint64", mtk_uartState, prop_uint64, 0),
-    DEFINE_PROP_BOOL("prop_bool", mtk_uartState, prop_bool, 0),
+    DEFINE_PROP_BOOL("prop_bool", mtk_uartState, prop_bool, 0)
 };
 
 static uint64_t mtk_uart_mmio1_read (void *opaque, hwaddr addr, unsigned size) {

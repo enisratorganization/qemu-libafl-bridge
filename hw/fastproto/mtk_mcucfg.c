@@ -45,11 +45,11 @@ struct mtk_mcucfgState {
 
 };
 
-static Property mtk_mcucfg_properties[] = {
+static const Property mtk_mcucfg_properties[] = {
     DEFINE_PROP_CHR("prop_chr", mtk_mcucfgState, prop_chr),
     DEFINE_PROP_STRING("prop_str", mtk_mcucfgState, prop_str),
     DEFINE_PROP_UINT64("prop_uint64", mtk_mcucfgState, prop_uint64, 0),
-    DEFINE_PROP_BOOL("prop_bool", mtk_mcucfgState, prop_bool, 0),
+    DEFINE_PROP_BOOL("prop_bool", mtk_mcucfgState, prop_bool, 0)
 };
 
 /**
