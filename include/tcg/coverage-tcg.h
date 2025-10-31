@@ -3,8 +3,14 @@
 
 #include "tcg/tcg.h"
 #include "tcg/coverage-tcg-helper-gen.h"
+#include "exec/translation-block.h"
 
-
+static inline bool edge_coverage_is_enabled(TranslationBlock *tb) {
+	return edge_coverage_record_tcg_enabled && tb->covrec_enabled;
+}
+static inline bool comp_coverage_is_enabled(TranslationBlock *tb) {
+	return comp_coverage_record_tcg_enabled && tb->covrec_enabled;
+}
 
 /**
  * Do a fast hash like CRC32. Used for coverage recording and fuzzing.

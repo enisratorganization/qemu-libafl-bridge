@@ -146,6 +146,11 @@ struct TranslationBlock {
     uintptr_t jmp_list_head;
     uintptr_t jmp_list_next[2];
     uintptr_t jmp_dest[2];
+
+    /** EDGE COVERAGE 
+     * Should we record coverage in this TB?
+     */
+    bool covrec_enabled;
 };
 
 /* The alignment given to TranslationBlock during allocation. */

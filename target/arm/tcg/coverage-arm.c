@@ -7,6 +7,9 @@
 void arm_tcg_cc_recording_check_and_remove(DisasContext *s, int current_cc, 
 	TCGOp *current_cc_rec_start, TCGOp *currenct_cc_rec_end ) {
 
+	if(!edge_coverage_is_enabled(s->base.tb))
+		return;
+
 	TCGOp *op, *tmp = NULL;
 	struct tcg_arm_edge_coverage *cov = &s->cov;
 
@@ -36,6 +39,9 @@ void arm_tcg_cc_recording_reset(DisasContext *s) {
 
 void arm_tcg_gen_rec_edge(DisasContext *s, TCGv cpu_pc, TCGv_i32 out_edge_id)
 {
+
+	if(!edge_coverage_is_enabled(s->base.tb))
+		return;
 
 	/* now record the edge */
 	if(s->aarch64){
