@@ -1,7 +1,9 @@
 #include "libafl/tcg.h"
 #include "libafl/hooks/tcg/cmp.h"
 
-#include "tcg/coverage-tcg-helper-gen.h"
+#include "tcg/coverage-tcg.h"
+#include "exec/translator.h"
+#include "exec/coverage.h"
 
 static struct libafl_cmp_hook* libafl_cmp_hooks = NULL;
 static size_t libafl_cmp_hooks_num = 0;
@@ -74,12 +76,12 @@ size_t libafl_add_cmp_hook(libafl_cmp_gen_cb gen_cb,
     return hook->num;
 }
 
-void libafl_gen_cmp(TCGv_ptr env, target_ulong pc, target_ulong pc_diff, TCGv op0, TCGv op1, MemOp ot)
+void libafl_gen_cmp(DisasContextBase *s, TCGv_ptr env, target_ulong pc, target_ulong pc_diff, TCGv op0, TCGv op1, MemOp ot)
 {
     size_t size = 1<<(ot&MO_SIZE);
 
     // BEGIN comp coverage using hitmap
-    if( comp_coverage_record_tcg_enabled ) {
+    if( comp_coverage_is_enabled(s->tb) ) {
         if(size == 1)
             gen_helper_record_cmp_i64_u8_mo8(env, tcg_constant_i64(pc_diff), op0, op1);
         else if(size == 2)

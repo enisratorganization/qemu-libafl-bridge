@@ -4,17 +4,14 @@
  * (Needs aligned_alloc)
  */
 
-#include <unistd.h>
 #include "qemu/osdep.h"
-#include "hw/core/cpu.h"
-#include "exec/coverage.h"
 #include "qobject/qdict.h"
 #include "qapi/error.h"
 #include "monitor/hmp.h"
 #include "monitor/monitor.h"
 #include "monitor/hmp-target.h"
-#include "qemu/option.h"
 #include "qemu/config-file.h"
+#include "exec/coverage.h"
 
 /**
 * Globally used parameters. Initialized at beginning, never changed afterward.
@@ -31,6 +28,21 @@ bool edge_coverage_record_tcg_enabled = false; // @TODO: should always be enable
 bool comp_coverage_record_tcg_enabled = false;
 
 bool edge_coverage_record_cornercase = true;    // @TODO: make option
+
+
+//struct Range *whitelist_pa_ranges = NULL;
+struct Range *whitelist_pa_ranges = NULL;
+size_t num_whitelist_pa_ranges = 1;
+
+bool is_whitelisted(uint64_t phys_pc) {
+    if( whitelist_pa_ranges == NULL )
+        return true;
+    uint32_t contained = 0;
+    for (int i = 0; i < num_whitelist_pa_ranges; i++) {
+        contained |= (whitelist_pa_ranges[i].lob <= phys_pc && whitelist_pa_ranges[i].upb > phys_pc);
+    };
+    return contained;
+};
 
 int init_coverage_recording(void *opaque, QemuOpts *opts, Error **errp) {
     CPUState *cpu;

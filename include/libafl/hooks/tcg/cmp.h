@@ -43,7 +43,7 @@ struct libafl_cmp_hook {
  * @pc_diff is the difference to pc from the last saved PC (called "pc_save" in most target archs)
  * In soft_mmu mode (with CF_PCREL), @pc_diff should be added to the PC from @env (as in ARM, RISCV, ...)
  */
-void libafl_gen_cmp(TCGv_ptr env, target_ulong pc, target_ulong pc_diff, TCGv op0, TCGv op1, MemOp ot);
+void libafl_gen_cmp(DisasContextBase* s, TCGv_ptr env, target_ulong pc, target_ulong pc_diff, TCGv op0, TCGv op1, MemOp ot);
 size_t libafl_add_cmp_hook(libafl_cmp_gen_cb gen_cb,
                            libafl_cmp_exec1_cb exec1_cb,
                            libafl_cmp_exec2_cb exec2_cb,

@@ -1,6 +1,11 @@
 #ifndef COVERAGE_H
 #define COVERAGE_H
 
+#include "qemu/option.h"
+#include "qemu/range.h"
+#include "hw/core/cpu.h"
+#include "qemu/osdep.h"
+
 /**
  * These global parameters should NOT be changed after initialization (init_coverage_recording).
  * The reason is that the values are used in TCG target code and should not be changed at runtime.
@@ -26,6 +31,19 @@ extern bool comp_coverage_record_tcg_enabled;
  * This can give the fuzzer immediate insight into corner cases, as these differ from the other two cases
  */
 extern bool edge_coverage_record_cornercase;
+
+/**
+ * @brief A whitelist of physical addresses to generate coverage in
+ * Array of Ranges.
+ * If NONNULL, only code in the whitelisted page ranges generates coverage!
+ */
+extern struct Range *whitelist_pa_ranges;
+extern size_t num_whitelist_pa_ranges;
+
+/**
+ * @brief Tested before beginning new TB
+ */
+bool is_whitelisted(uint64_t phys_pc);
 
 /* Initializes the coverage record buffers based on the sizes (static globals as *extern*) above. */
 int init_coverage_recording(void *opaque, QemuOpts *opts, Error **errp);

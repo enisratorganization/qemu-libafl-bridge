@@ -1770,9 +1770,8 @@ static bool trans_BLR(DisasContext *s, arg_r *a)
     gen_pc_plus_diff(s, lr, curr_insn_len(s));
 
     /*EDGE COVERAGE*/
-    /*Save one insn and not call arm_tcg_gen_rec_edge; use LR=PC+4 instead of actual PC*/
-    tcg_gen_rec_edge_i64(lr, dst); 
-    
+    arm_tcg_gen_rec_edge(s, cpu_pc, dst);
+
     gen_a64_set_pc(s, dst);
     set_btype_for_blr(s);
     s->base.is_jmp = DISAS_JUMP;
@@ -4541,7 +4540,7 @@ typedef void ArithTwoOp(TCGv_i64, TCGv_i64, TCGv_i64);
 
 //// --- Begin LibAFL code ---
 
-void libafl_gen_cmp(TCGv_ptr env, target_ulong pc, target_ulong pc_diff, TCGv op0, TCGv op1, MemOp ot);
+void libafl_gen_cmp(DisasContextBase *s, TCGv_ptr env, target_ulong pc, target_ulong pc_diff, TCGv op0, TCGv op1, MemOp ot);
 
 //// --- End LibAFL code ---
 
@@ -4558,7 +4557,7 @@ static bool gen_rri(DisasContext *s, arg_rri_sf *a,
         fn == tcg_gen_sub_i64 ||
         fn == gen_sub64_CC ||
         fn == gen_sub32_CC)) { // cmp xX, imm
-      libafl_gen_cmp(tcg_env, s->pc_curr, (s->pc_curr-s->pc_save), tcg_rn, tcg_imm, a->sf ? MO_64 : MO_32);
+      libafl_gen_cmp(&s->base, tcg_env, s->pc_curr, (s->pc_curr-s->pc_save), tcg_rn, tcg_imm, a->sf ? MO_64 : MO_32);
     }
 
 //// --- End LibAFL code ---
@@ -8406,7 +8405,7 @@ static bool do_addsub_ext(DisasContext *s, arg_addsub_ext *a,
 //// --- Begin LibAFL code ---
 
     if (a->rd == 31 && sub_op) // cmp xX, xY
-      libafl_gen_cmp(tcg_env, s->pc_curr, (s->pc_curr-s->pc_save), tcg_rn, tcg_rm, a->sf ? MO_64 : MO_32);
+      libafl_gen_cmp(&s->base, tcg_env, s->pc_curr, (s->pc_curr-s->pc_save), tcg_rn, tcg_rm, a->sf ? MO_64 : MO_32);
 
 //// --- End LibAFL code ---
 
@@ -8456,7 +8455,7 @@ static bool do_addsub_reg(DisasContext *s, arg_addsub_shift *a,
 //// --- Begin LibAFL code ---
 
     if (a->rd == 31 && sub_op) // cmp xX, xY
-      libafl_gen_cmp(tcg_env, s->pc_curr, (s->pc_curr-s->pc_save), tcg_rn, tcg_rm, a->sf ? MO_64 : MO_32);
+      libafl_gen_cmp(&s->base, tcg_env, s->pc_curr, (s->pc_curr-s->pc_save), tcg_rn, tcg_rm, a->sf ? MO_64 : MO_32);
 
 //// --- End LibAFL code ---
 
@@ -8651,7 +8650,7 @@ static bool trans_CCMP(DisasContext *s, arg_CCMP *a)
 
 //// --- Begin LibAFL code ---
 
-    libafl_gen_cmp(tcg_env, s->pc_curr, (s->pc_curr-s->pc_save), tcg_rn, tcg_y, a->sf ? MO_64 : MO_32);
+    libafl_gen_cmp(&s->base, tcg_env, s->pc_curr, (s->pc_curr-s->pc_save), tcg_rn, tcg_y, a->sf ? MO_64 : MO_32);
 
 //// --- End LibAFL code ---
 

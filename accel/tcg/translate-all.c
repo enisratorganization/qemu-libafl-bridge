@@ -71,6 +71,7 @@
 
 #include "libafl/hooks/tcg/block.h"
 #include "libafl/hooks/tcg/edge.h"
+#include "exec/coverage.h"
 
 //// --- End LibAFL code ---
 
@@ -351,6 +352,15 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
         tb->pc = pc;
     //}
 //// --- End LibAFL code ---
+
+    /* EDGE COVERAGE : check whitelist on physical PC */
+        ram_addr_t offset;
+        RAMBlock *rb = qemu_ram_block_from_host(host_pc, false, &offset);
+        if(rb){
+            tb->covrec_enabled = is_whitelisted( rb->mr->addr+offset );
+        } else {
+            tb->covrec_enabled = false;
+        }
 
     tb->cs_base = cs_base;
     tb->flags = flags;
