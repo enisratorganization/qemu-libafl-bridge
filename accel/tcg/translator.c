@@ -202,30 +202,38 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
             }
         };
 
+        /**
+         * @brief This is BROKEN:
+         * 
+         * "record_save()" existence was ignored...
+         * When translating from invalid addresses, may lead to:
+         * Thread 3 "qemu-system-aar" hit Breakpoint 1, record_save (db=db@entry=0x7ffff4ac11e0, pc=pc@entry=0, from=from@entry=0x7ffff4ac1127, size=size@entry=1)
+    at ../accel/tcg/translator.c:407
+         */
         // 0x0f, 0x3a, 0xf2, 0x44
-        uint8_t backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next);
-        if (backdoor == 0x0f) {
-            backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next +1);
-            if (backdoor == 0x3a) {
-                backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next +2);
-                if (backdoor == 0xf2) {
-                    backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next +3);
-                    if (backdoor == 0x44) {
-                        libafl_qemu_hook_backdoor_run(db->pc_next);
+        // uint8_t backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next);
+        // if (backdoor == 0x0f) {
+        //     backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next +1);
+        //     if (backdoor == 0x3a) {
+        //         backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next +2);
+        //         if (backdoor == 0xf2) {
+        //             backdoor = translator_ldub(cpu_env(cpu), db, db->pc_next +3);
+        //             if (backdoor == 0x44) {
+        //                 libafl_qemu_hook_backdoor_run(db->pc_next);
 
-                        db->pc_next += 4;
-                        goto post_translate_insn;
-                    } else if (backdoor == 0x66) {
-                        // First update pc_next to restart at next instruction
-                        db->pc_next += 4;
+        //                 db->pc_next += 4;
+        //                 goto post_translate_insn;
+        //             } else if (backdoor == 0x66) {
+        //                 // First update pc_next to restart at next instruction
+        //                 db->pc_next += 4;
 
-                        TCGv_i64 tmp0 = tcg_constant_i64((uint64_t)db->pc_next);
-                        gen_helper_libafl_qemu_handle_custom_insn(tcg_env, tmp0, tcg_constant_i32(LIBAFL_CUSTOM_INSN_LIBAFL));
-                        tcg_temp_free_i64(tmp0);
-                    }
-                }
-            }
-        }
+        //                 TCGv_i64 tmp0 = tcg_constant_i64((uint64_t)db->pc_next);
+        //                 gen_helper_libafl_qemu_handle_custom_insn(tcg_env, tmp0, tcg_constant_i32(LIBAFL_CUSTOM_INSN_LIBAFL));
+        //                 tcg_temp_free_i64(tmp0);
+        //             }
+        //         }
+        //     }
+        // }
 
         //// --- End LibAFL code ---
 
