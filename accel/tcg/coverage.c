@@ -29,9 +29,8 @@ bool comp_coverage_record_tcg_enabled = false;
 
 bool edge_coverage_record_cornercase = true;    // @TODO: make option
 
-
-//struct Range *whitelist_pa_ranges = NULL;
-struct Range *whitelist_pa_ranges = NULL;
+//uint64_t testranges[] = {0x70546000, 0x705a5000};
+struct Range *whitelist_pa_ranges = NULL; // testranges;
 size_t num_whitelist_pa_ranges = 1;
 
 bool is_whitelisted(uint64_t phys_pc) {
