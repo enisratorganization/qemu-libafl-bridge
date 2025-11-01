@@ -255,6 +255,11 @@ static SyxSnapshotRoot* syx_snapshot_root_new(DeviceSnapshotKind kind,
     root->dss = dss;
 
     RAMBLOCK_FOREACH(block)
+    { if(block->idstr_hash == 0){
+            block->idstr_hash = (guint)block; //take care nameless ramblocks have IDs too
+        }
+    } 
+    RAMBLOCK_FOREACH(block)
     {
         RAMBLOCK_FOREACH(inner_block)
         {
@@ -653,7 +658,7 @@ static void root_restore_rb_page(gpointer offset_within_rb, gpointer _unused,
     // Invalidate TBs
     tb_invalidate_phys_range(rb->offset + (ram_addr_t)offset_within_rb,
                              rb->offset + (ram_addr_t)offset_within_rb +
-                                 syx_snapshot_state.page_size);
+                                 syx_snapshot_state.page_size - 1);
 }
 
 static void root_restore_rb(gpointer rb_idstr_hash,
