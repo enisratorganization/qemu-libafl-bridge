@@ -187,30 +187,25 @@ static void mt6768_init(MachineState * machine)
     o = object_resolve_path_component(object_get_objects_root(), "config_area");
     memory_region_add_subregion(get_system_memory(), 0x300000, &MEMORY_BACKEND(o)->mr);
 
-    if( load_image_targphys("atf", 0x4CE01000, 0x100000) < 0 ){
-        error_report("could not load atf");
-        exit(1);
-    }
-    if( load_image_targphys("atf_arg_t", 0x4CE00000, 0x100000) < 0 ){
-        error_report("could not load atf_arg_t");
-        exit(1);
-    }
-    if( load_image_targphys("mtk_bl_param_t", 0x4C080000, 0x100000) < 0 ){
-        error_report("could not load mtk_bl_param_t");
-        exit(1);
-    }
-    if( load_image_targphys("atags", 0x4C11DA80, 0x100000) < 0 ){
-        error_report("could not load atags");
-        exit(1);
-    }
-    if( load_image_targphys("tee", 0x70000000, 0x400000) < 0 ){
-        error_report("could not load tee");
-        exit(1);
-    }
-    if( load_image_targphys("lk", 0x4c400000, 0x800000) < 0 ){
-        error_report("could not load lk");
-        exit(1);
-    }
+    char *fname;
+    fname = qemu_find_file(QEMU_FILE_TYPE_BIOS, "atf");
+    if( load_image_targphys(fname, 0x4CE01000, 0x100000) < 0) goto ERR_LOAD;
+    g_free(fname);
+    fname = qemu_find_file(QEMU_FILE_TYPE_BIOS, "atf_arg_t");
+    if( load_image_targphys(fname, 0x4CE00000, 0x100000) < 0 ) goto ERR_LOAD;
+    g_free(fname);
+    fname = qemu_find_file(QEMU_FILE_TYPE_BIOS, "mtk_bl_param_t");
+    if( load_image_targphys(fname, 0x4C080000, 0x100000) < 0 ) goto ERR_LOAD;
+    g_free(fname);
+    fname = qemu_find_file(QEMU_FILE_TYPE_BIOS, "atags");
+    if( load_image_targphys(fname, 0x4C11DA80, 0x100000) < 0 )  goto ERR_LOAD;
+    g_free(fname);
+    fname = qemu_find_file(QEMU_FILE_TYPE_BIOS, "tee");
+    if (load_image_targphys(fname, 0x70000000, 0x400000) < 0)  goto ERR_LOAD;
+    g_free(fname);
+    fname = qemu_find_file(QEMU_FILE_TYPE_BIOS, "lk");
+    if (load_image_targphys(fname, 0x4c400000, 0x800000) < 0)  goto ERR_LOAD;
+    g_free(fname);
 
     ARMCPU * cs = qemu_get_cpu(0);
 
@@ -225,6 +220,11 @@ static void mt6768_init(MachineState * machine)
 
     atf_teei_instrument();
     teei_instrument();
+
+    return;
+ERR_LOAD:
+    error_report("could not load %s", fname);
+    exit(1);
 }
 
 static void mt6768_machine_init(MachineClass *mc)
