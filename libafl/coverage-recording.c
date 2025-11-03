@@ -32,3 +32,8 @@ void * libafl_get_comp_coverage_map(CPUState *cpu) {
         return NULL;
     }
 }
+
+void libafl_set_coverage_whitelist_pa_ranges(void *loc, size_t num) {
+    whitelist_pa_ranges = (Range*)loc;
+    num_whitelist_pa_ranges = num;
+}

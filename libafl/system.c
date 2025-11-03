@@ -47,3 +47,14 @@ int libafl_qemu_toggle_hw_breakpoint(vaddr addr, bool set)
 
     return 0;
 }
+
+
+static int64_t clock_ctr = 0;
+static int64_t get_warped_clock(void) {
+    
+    return clock_ctr++;
+}
+void libafl_warp_clock() {
+    cpus_get_accel()->get_virtual_clock = get_warped_clock;
+    clock_ctr=0;
+}
