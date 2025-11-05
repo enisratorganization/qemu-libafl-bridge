@@ -321,7 +321,7 @@ void store_reg(DisasContext *s, int reg, TCGv_i32 var)
         /*EDGE COVERAGE*/
         //exclude "ret" = "mov pc,lr" = "bx lr" insn
         // and also ldr...pc... [rx]
-        if( !s->cov.store_reg_probably_ret )
+        if( !s->cov.ignore_this_store_reg_for_coverage )
             arm_tcg_gen_rec_edge(s, cpu_R[15], var);
 
         s->base.is_jmp = DISAS_JUMP;
@@ -858,7 +858,7 @@ void gen_update_pc(DisasContext *s, target_long diff)
 static inline void gen_bx(DisasContext *s, TCGv_i32 var)
 {
     /*EDGE COVERAGE*/
-    if( !s->cov.store_reg_probably_ret )//exclude "ret" = "mov pc,lr" = "bx lr" insn
+    if( !s->cov.ignore_this_store_reg_for_coverage )//exclude "ret" = "mov pc,lr" = "bx lr" insn
         arm_tcg_gen_rec_edge(s, cpu_R[15], var);
     
 
@@ -994,7 +994,7 @@ static inline void store_reg_from_load(DisasContext *s, int reg, TCGv_i32 var)
 {
     /* EDGE COVERAGE Probably a "return" insn*/
     if (reg == 15){
-        s->cov.store_reg_probably_ret = true;
+        s->cov.ignore_this_store_reg_for_coverage = true;
     }
     if (reg == 15 && ENABLE_ARCH_5) {
         gen_bx_excret(s, var);
@@ -3860,7 +3860,7 @@ static bool op_s_rxr_shi(DisasContext *s, arg_s_rrr_shi *a,
     TCGv_i32 tmp;
 
     /* EDGE COVERAGE Probably "mov pc, lr", which we would like to exclude from coverage recording */
-    s->cov.store_reg_probably_ret = ( a->rm == 14 && a->shty == 0 && a->shim == 0 );
+    s->cov.ignore_this_store_reg_for_coverage = ( a->rm == 14 && a->shty == 0 && a->shim == 0 );
 
     tmp = load_reg(s, a->rm);
     gen_arm_shift_im(tmp, a->shty, a->shim, logic_cc);
@@ -3971,6 +3971,9 @@ static bool op_s_rxi_rot(DisasContext *s, arg_s_rri_rot *a,
 {
     TCGv_i32 tmp;
     uint32_t imm;
+
+    /* EDGE COVERAGE Probably "mov pc, #0x...", which we would like to exclude from coverage recording */
+    s->cov.ignore_this_store_reg_for_coverage = (a->rd == 15);
 
     imm = ror32(a->imm, a->rot);
     if (logic_cc && a->rot) {
@@ -4863,7 +4866,7 @@ static bool trans_BX(DisasContext *s, arg_BX *a)
 
     /* EDGE COVERAGE Is a BX LR??*/
     if( a->rm == 14) {
-        s->cov.store_reg_probably_ret = true;
+        s->cov.ignore_this_store_reg_for_coverage = true;
     }
 
     gen_bx_excret(s, load_reg(s, a->rm));
@@ -7901,7 +7904,7 @@ static void arm_tr_insn_start(DisasContextBase *dcbase, CPUState *cpu)
     dc->insn_start_updated = false;
 
     /* EDGE COVERAGE Reset "ret"-like insn flag */
-    dc->cov.store_reg_probably_ret = false;
+    dc->cov.ignore_this_store_reg_for_coverage = false;
 }
 
 static bool arm_check_kernelpage(DisasContext *dc)
