@@ -32,7 +32,7 @@ int libafl_qemu_set_breakpoint(target_ulong pc)
 
 int libafl_qemu_remove_breakpoint(target_ulong pc)
 {
-    remove_instrument(pc, -1);
+    deactivate_instrument(pc, -1);
     return 1;
 }
 

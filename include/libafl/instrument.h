@@ -32,4 +32,7 @@ bool call_instrument_cb(CPUState *cs, vaddr pc);
  */
 bool add_instrument(vaddr pc, int cpu_index, InstrumentCallback cb, void *opaque);
 
+bool deactivate_instrument(vaddr pc, int cpu_index);
+bool reactivate_instrument(vaddr pc, int cpu_index);
+
 bool remove_instrument(vaddr pc, int cpu_index);
