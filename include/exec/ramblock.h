@@ -37,8 +37,8 @@ struct RAMBlock {
     /* Protected by the BQL.  */
     char idstr[256];
 //// --- Begin LibAFL code ---
-    guint idstr_hash;
-//// --- End LibAFL code ---
+    void *syx; // Pointer to SyxSnapshotRAMBlock
+    //// --- End LibAFL code ---
     /* RCU-enabled, writes protected by the ramlist lock */
     QLIST_ENTRY(RAMBlock) next;
     QLIST_HEAD(, RAMBlockNotifier) ramblock_notifiers;

@@ -9,6 +9,7 @@
 #pragma once
 
 #include "qemu/osdep.h"
+#include "qemu/qht.h"
 
 #include "device-save.h"
 #include "syx-cow-cache.h"
@@ -16,29 +17,41 @@
 
 #define SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE 64
 #define SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS (1024 * 1024)
+#define SYX_SNAPSHOT_MAX_INCREMENTAL_DEPTH 8
 
-typedef struct SyxSnapshotRoot SyxSnapshotRoot;
-typedef struct SyxSnapshotIncrement SyxSnapshotIncrement;
 
+typedef struct SyxSnapshotInc {
+    size_t seqnum;        // next (incremental) sequence num for dirty page not recorded yet (starting with 1!)
+    struct qht dpl;       // Collect new dirty pages since this increment (while this increment is active)
+    uint8_t *saved_pages; //Pages different compared to snapshot before
+} SyxSnapshotInc;
+/**
+ * Saved ramblock
+ */
+typedef struct SyxSnapshotRAMBlock {
+    //uint8_t* ram;         // Copy of RAM block @root snapshot
+    uint64_t used_length; // Length of the ram block at initial full copy
+    // Incremental dirty page lists. We allow at most 8
+    SyxSnapshotInc incs[SYX_SNAPSHOT_MAX_INCREMENTAL_DEPTH];
+} SyxSnapshotRAMBlock;
 /**
  * A snapshot. It is the main object used in this API to
  * handle snapshotting.
  */
 typedef struct SyxSnapshot {
-    SyxSnapshotRoot* root_snapshot;
-    SyxSnapshotIncrement* last_incremental_snapshot;
-
     SyxCowCache* bdrvs_cow_cache;
-    GHashTable*
-        rbs_dirty_list; // hash map: H(rb) ->
-                        // GHashTable(offset_within_ramblock). Filled lazily.
+    size_t inc; // how many incremental snapshots above root do we have?
+    DeviceSaveState dss[SYX_SNAPSHOT_MAX_INCREMENTAL_DEPTH];
 } SyxSnapshot;
 
+/*
+//No use, there is only ONE snapshot (with incrementals)
 typedef struct SyxSnapshotTracker {
     SyxSnapshot** tracked_snapshots;
     uint64_t length;
     uint64_t capacity;
 } SyxSnapshotTracker;
+*/
 
 typedef struct SyxSnapshotState {
     bool is_enabled;
@@ -46,10 +59,7 @@ typedef struct SyxSnapshotState {
     uint64_t page_size;
     uint64_t page_mask;
 
-    // Actively tracked snapshots. Their dirty lists will
-    // be updated at each dirty access
-    SyxSnapshotTracker tracked_snapshots;
-
+    SyxSnapshot *thesnap; //@TODO: there is only one...
     // In use iif syx is initialized with cached_bdrvs flag on.
     // It is not updated anymore when an active bdrv cache snapshto is set.
     SyxCowCache* before_fuzz_cache;
@@ -88,16 +98,6 @@ void syx_snapshot_increment_pop(SyxSnapshot* snapshot);
 
 void syx_snapshot_increment_restore_last(SyxSnapshot* snapshot);
 
-//
-// Snapshot tracker API
-//
-
-SyxSnapshotTracker syx_snapshot_tracker_init(void);
-
-void syx_snapshot_track(SyxSnapshotTracker* tracker, SyxSnapshot* snapshot);
-
-void syx_snapshot_stop_track(SyxSnapshotTracker* tracker,
-                             SyxSnapshot* snapshot);
 
 //
 // Misc functions
