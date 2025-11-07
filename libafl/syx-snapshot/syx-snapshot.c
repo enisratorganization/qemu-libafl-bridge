@@ -24,17 +24,16 @@ bool qht_cmp_true(const void* a, const void* b) { return true; }
 
 //set all RAM as clear (not dirty)
 static void all_ram_notdirty(void) {
-    
-    MemoryRegion *sysmem, *subregion, *next;
-    sysmem = get_system_memory();
-    QTAILQ_FOREACH_SAFE(subregion, &sysmem->subregions, subregions_link,
-                        next)
+
+    RAMBlock* rb;
+    RCU_READ_LOCK_GUARD();
+    RAMBLOCK_FOREACH(rb)
     {
-        if (subregion->ram) {
+        if (rb->mr) {
             #ifdef SYX_SNAPSHOT_DEBUG
-            printf("memory_region_reset_dirty: %llx %llx\n", subregion->addr, subregion->size);
+            printf("cpu_physical_memory_test_and_clear_dirty: %llx %llx\n", rb->mr->addr, rb->used_length);
             #endif
-            memory_region_reset_dirty(subregion, 0, subregion->size, DIRTY_MEMORY_MIGRATION);
+            cpu_physical_memory_test_and_clear_dirty(rb->offset, rb->used_length, DIRTY_MEMORY_MIGRATION);
         }
     }
 }
@@ -82,7 +81,6 @@ SyxSnapshot* syx_snapshot_new(bool track, bool is_active_bdrv_cache,
         //make sure to catch all new writes
         //with a filled TLB there might be missed writes
         tlb_flush_all_cpus();
-
         all_ram_notdirty();
     }
 
@@ -128,10 +126,17 @@ static SyxSnapshot* syx_snapshot_root_new(DeviceSnapshotKind kind,
 static void save_pages(void* p, uint32_t h, void* up) {
     SyxSnapshotInc* sinc = ((void**)up)[0];
     RAMBlock* rb = ((void**)up)[1];
+    ram_addr_t *min  = &((void**)up)[2];
+    ram_addr_t *max  = &((void**)up)[3];
+    uintptr_t *any  = &((void**)up)[4];
+    *any = 1;
 
     ram_addr_t offset = ((ram_addr_t)h) << TARGET_PAGE_BITS;
     size_t seq = p;
     memcpy(sinc->saved_pages+ (seq-1)*TARGET_PAGE_SIZE, rb->host + offset, TARGET_PAGE_SIZE);
+
+    if(offset < *min) *min = offset;
+    if(offset > *max) *max = offset;
 }
 void syx_snapshot_increment_push(SyxSnapshot* snapshot, DeviceSnapshotKind kind,
                                  char** devices)
@@ -157,8 +162,21 @@ void syx_snapshot_increment_push(SyxSnapshot* snapshot, DeviceSnapshotKind kind,
         sinc->saved_pages = g_aligned_alloc(PAGESZ, numdirty, qemu_real_host_page_size());
 
         // Copy pages changed since last snapshot
-        void* arg[2] = {sinc, rb};
+        void* arg[5] = {sinc, rb, -1, 0, 0};
         qht_iter(&srb->incs[inc-1].dpl, save_pages, arg);
+       
+        // reset QEMU dirty page tracking
+        // trying to reduce the range as this is quite costly
+        uintptr_t *any  = &arg[4];
+        if(*any) {
+            ram_addr_t min  = *(ram_addr_t*)&arg[2];
+            ram_addr_t max  = *(ram_addr_t*)&arg[3];           
+            cpu_physical_memory_test_and_clear_dirty(rb->offset + min, (max-min+1), DIRTY_MEMORY_MIGRATION); 
+            #ifdef SYX_SNAPSHOT_DEBUG
+            printf("cpu_physical_memory_test_and_clear_dirty: @%llx , %llx-%llx\n", rb->mr->addr, min, max);
+            printf("clean: %d\n", cpu_physical_memory_get_dirty(rb->offset, rb->used_length, DIRTY_MEMORY_MIGRATION));
+            #endif
+        }
 
         if(!sinc->dpl.map) 
             qht_init(&sinc->dpl, qht_cmp_true, SYX_DPL_INIT_QHT_ELEMS, QHT_MODE_AUTO_RESIZE);
@@ -167,7 +185,6 @@ void syx_snapshot_increment_push(SyxSnapshot* snapshot, DeviceSnapshotKind kind,
     }
 
     tlb_flush_all_cpus();
-    all_ram_notdirty();
 }
 
 
@@ -175,11 +192,20 @@ static void restore_pages(void* p, uint32_t h, void* up) {
     RAMBlock* rb = ((void**)up)[0];
     SyxSnapshot* snap = ((void**)up)[1];
     size_t inc  = ((void**)up)[2];
+    ram_addr_t *min  = &((void**)up)[3];
+    ram_addr_t *max  = &((void**)up)[4];
+    uintptr_t *any  = &((void**)up)[5];
+    *any = 1;
+
     SyxSnapshotRAMBlock* srb = rb->syx;
 
     ram_addr_t offset = ((ram_addr_t)h) << TARGET_PAGE_BITS;
     size_t seq = p;
 
+    if(offset < *min) *min = offset;
+    if(offset > *max) *max = offset;
+
+    // search for hit in DPLs top to bottom
     while(inc > 0) {
         size_t oldseq = qht_lookup(&srb->incs[inc - 1].dpl, NULL, h);
         if(oldseq) {
@@ -211,15 +237,27 @@ void syx_snapshot_increment_restore_last(SyxSnapshot* snapshot)
         SyxSnapshotInc *sinc = &srb->incs[inc];
 
         // Copy pages back to hostmem
-        void* arg[3] = {rb, snapshot, inc};
+        void* arg[6] = {rb, snapshot, inc, -1, 0, 0};
         qht_iter(&srb->incs[inc].dpl, restore_pages, arg);
 
         qht_reset(&srb->incs[inc].dpl);
         sinc->seqnum = 1;
+
+        // reset QEMU dirty page tracking
+        // trying to reduce the range as this is quite costly
+        uintptr_t *any  = &arg[5];
+        if(*any) {
+            ram_addr_t min  = *(ram_addr_t*)&arg[3];
+            ram_addr_t max  = *(ram_addr_t*)&arg[4];            
+            cpu_physical_memory_test_and_clear_dirty(rb->offset + min, (max-min+1), DIRTY_MEMORY_MIGRATION); 
+            #ifdef SYX_SNAPSHOT_DEBUG
+            printf("cpu_physical_memory_test_and_clear_dirty: @%llx , %llx-%llx\n", rb->mr->addr, min, max);
+            printf("clean: %d\n", cpu_physical_memory_get_dirty(rb->offset, rb->used_length, DIRTY_MEMORY_MIGRATION));
+            #endif
+        }
     }
 
-    tlb_flush_all_cpus();
-    all_ram_notdirty();
+    tlb_flush_all_cpus(); // no way to optimize probably?
 }
 
 void syx_snapshot_increment_pop(SyxSnapshot* snapshot)
@@ -257,7 +295,7 @@ static inline void syx_snapshot_dirty_list_add_internal(RAMBlock* rb,
     srb->incs[inc].seqnum += ret;
 
     #ifdef SYX_SNAPSHOT_DEBUG
-    SYX_PRINTF("[%s] Marking offset 0x%lx as dirty\n", rb->idstr, offset);
+    SYX_PRINTF("[%s] [inc %d] Marking offset 0x%lx as dirty\n", rb->idstr, snapshot->inc, offset);
     #endif
 
 }
@@ -276,9 +314,9 @@ void syx_snapshot_dirty_list_add_hostaddr(void* host_addr)
     ram_addr_t offset;
     RAMBlock* rb = qemu_ram_block_from_host((void*)host_addr, true, &offset);
 
-#ifdef SYX_SNAPSHOT_DEBUG
+/*#ifdef SYX_SNAPSHOT_DEBUG
     SYX_PRINTF("Should mark offset 0x%lx as dirty\n", offset);
-#endif
+#endif*/
 
     if (!rb) { return;}
 
@@ -357,8 +395,21 @@ void syx_snapshot_root_restore(SyxSnapshot* snapshot)
             inc--;
         }
         // Copy pages back to hostmem
-        void* arg[3] = {rb, snapshot, 0};
+        void* arg[6] = {rb, snapshot, 0, -1, 0, 0};
         qht_iter(&root->dpl, restore_pages, arg);
+
+        // reset QEMU dirty page tracking
+        // trying to reduce the range as this is quite costly
+        uintptr_t *any  = &arg[5];
+        if(*any) {
+            ram_addr_t min  = *(ram_addr_t*)&arg[3];
+            ram_addr_t max  = *(ram_addr_t*)&arg[4];
+            cpu_physical_memory_test_and_clear_dirty(rb->offset + min, (max-min+1), DIRTY_MEMORY_MIGRATION); 
+            #ifdef SYX_SNAPSHOT_DEBUG
+            printf("cpu_physical_memory_test_and_clear_dirty: @%llx , %llx-%llx\n", rb->mr->addr, min, max);
+            printf("clean: %d\n", cpu_physical_memory_get_dirty(rb->offset, rb->used_length, DIRTY_MEMORY_MIGRATION));
+            #endif
+        }
 
         qht_reset(&root->dpl);
         root->seqnum = 1;
@@ -367,7 +418,6 @@ void syx_snapshot_root_restore(SyxSnapshot* snapshot)
     snapshot->inc = 0;
 
     tlb_flush_all_cpus();
-    all_ram_notdirty();
 
     syx_cow_cache_flush_highest_layer(snapshot->bdrvs_cow_cache);
 
