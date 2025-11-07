@@ -32,3 +32,14 @@ void hmp_syx_snapshot_root_restore(Monitor * mon, const QDict* qdict)
         syx_snapshot_root_restore(current_snapshot);
     }
 }
+
+void hmp_syx_snapshot_increment_push(Monitor *mon, const QDict *qdict){
+    if (current_snapshot != NULL) {
+        syx_snapshot_increment_push(current_snapshot,DEVICE_SNAPSHOT_ALL, NULL);
+    }
+}
+void hmp_syx_snapshot_increment_pop(Monitor *mon, const QDict *qdict){
+    if (current_snapshot != NULL) {
+        syx_snapshot_increment_pop(current_snapshot);
+    }
+}

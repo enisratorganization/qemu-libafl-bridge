@@ -96,7 +96,6 @@ void syx_snapshot_free(SyxSnapshot* snapshot)
  
 }
 
-
 static SyxSnapshot* syx_snapshot_root_new(DeviceSnapshotKind kind,
                                               char** devices)
 {
@@ -130,9 +129,9 @@ static void save_pages(void* p, uint32_t h, void* up) {
     SyxSnapshotInc* sinc = ((void**)up)[0];
     RAMBlock* rb = ((void**)up)[1];
 
-    ram_addr_t offset = h << TARGET_PAGE_BITS;
+    ram_addr_t offset = ((ram_addr_t)h) << TARGET_PAGE_BITS;
     size_t seq = p;
-    memcpy(sinc->saved_pages+ seq*TARGET_PAGE_SIZE, rb->host + offset, TARGET_PAGE_SIZE);
+    memcpy(sinc->saved_pages+ (seq-1)*TARGET_PAGE_SIZE, rb->host + offset, TARGET_PAGE_SIZE);
 }
 void syx_snapshot_increment_push(SyxSnapshot* snapshot, DeviceSnapshotKind kind,
                                  char** devices)
@@ -154,11 +153,11 @@ void syx_snapshot_increment_push(SyxSnapshot* snapshot, DeviceSnapshotKind kind,
         SyxSnapshotRAMBlock* srb = rb->syx;
         SyxSnapshotInc *sinc = &srb->incs[inc];
 
-        size_t numdirty = srb->incs[inc - 1].seqnum-1; //-1 important!
+        size_t numdirty = srb->incs[inc - 1].seqnum-1; //-1 important as we start seqnum at 1!
         sinc->saved_pages = g_aligned_alloc(PAGESZ, numdirty, qemu_real_host_page_size());
 
         // Copy pages changed since last snapshot
-        void* arg[2] = {rb, sinc};
+        void* arg[2] = {sinc, rb};
         qht_iter(&srb->incs[inc-1].dpl, save_pages, arg);
 
         if(!sinc->dpl.map) 
@@ -218,21 +217,26 @@ void syx_snapshot_increment_restore_last(SyxSnapshot* snapshot)
         qht_reset(&srb->incs[inc].dpl);
         sinc->seqnum = 1;
     }
+
+    tlb_flush_all_cpus();
+    all_ram_notdirty();
 }
 
 void syx_snapshot_increment_pop(SyxSnapshot* snapshot)
 {
-    syx_snapshot_increment_restore_last(snapshot);
+    if(snapshot->inc > 0) {
+        syx_snapshot_increment_restore_last(snapshot);
 
-    RAMBlock* rb;
-    RCU_READ_LOCK_GUARD();
-    RAMBLOCK_FOREACH(rb)
-    {
-        SyxSnapshotRAMBlock* srb = rb->syx;
-        g_free(srb->incs[snapshot->inc].saved_pages);
+        RAMBlock* rb;
+        RCU_READ_LOCK_GUARD();
+        RAMBLOCK_FOREACH(rb)
+        {
+            SyxSnapshotRAMBlock* srb = rb->syx;
+            g_free(srb->incs[snapshot->inc].saved_pages);
+        }
+
+        snapshot->inc--;
     }
-
-    if(snapshot->inc > 0) snapshot->inc--;
 }
 
 static inline void syx_snapshot_dirty_list_add_internal(RAMBlock* rb,
@@ -245,9 +249,12 @@ static inline void syx_snapshot_dirty_list_add_internal(RAMBlock* rb,
     SyxSnapshotRAMBlock *srb = (SyxSnapshotRAMBlock*)rb->syx;
 
     size_t inc = snapshot->inc;
-    size_t seq = srb->incs[inc].seqnum++;
+    size_t seq = srb->incs[inc].seqnum;
+    int ret;
 
-    qht_insert(&srb->incs[inc].dpl, seq, (uint32_t) (offset>>TARGET_PAGE_BITS), NULL);
+    ret = qht_insert(&srb->incs[inc].dpl, seq, (uint32_t) (offset>>TARGET_PAGE_BITS), NULL);
+
+    srb->incs[inc].seqnum += ret;
 
     #ifdef SYX_SNAPSHOT_DEBUG
     SYX_PRINTF("[%s] Marking offset 0x%lx as dirty\n", rb->idstr, offset);
@@ -356,6 +363,8 @@ void syx_snapshot_root_restore(SyxSnapshot* snapshot)
         qht_reset(&root->dpl);
         root->seqnum = 1;
     }
+
+    snapshot->inc = 0;
 
     tlb_flush_all_cpus();
     all_ram_notdirty();
