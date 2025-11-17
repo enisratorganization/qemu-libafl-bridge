@@ -1,3 +1,14 @@
+# RUN mt6768
+
+Example cmd:
+```
+./qemu-system-aarch64 -machine mt6768 -smp maxcpus=8 -object memory-backend-file,id=config_area,size=4096B,share=off,rom=off,readonly=on,mem-path=CFG  -object memory-backend-file,id=sram2,size=458752B,share=off,rom=off,readonly=on,mem-path=YOUR_PATH/sram2 -chardev file,id=uart0,path=/tmp/qemulog -nographic -covrec edge_elem_sz=1,edge_elems=8192,edge_enable -L ~/git/mtk-microtrust-fuzzer/fuzzer/files/
+```
+```
+ls ~/git/mtk-microtrust-fuzzer/fuzzer/files/
+atags  atf  atf_arg_t  CFG  el1.elf  fiasco_withsyms.elf  lk  mtk_bl_param_t  sram2  tee
+```
+
 # QEMU LibAFL Bridge
 
 This is a patched version of [QEMU](https://gitlab.com/qemu-project/qemu) that exposes an interface for LibAFL-based fuzzers.
