@@ -1,6 +1,7 @@
 #include "qemu/osdep.h"
 
 #include "qemu/main-loop.h"
+#include "qemu/mmap-alloc.h"
 #include "cpu.h"
 
 #include "exec/ramlist.h"
@@ -91,7 +92,41 @@ SyxSnapshot* syx_snapshot_new(bool track, bool is_active_bdrv_cache,
 
 void syx_snapshot_free(SyxSnapshot* snapshot)
 {
- 
+    //@TODO
+}
+
+// Allocate a complete copy of the hostmem of given ramblock
+uint8_t *ramcopy_alloc(RAMBlock *rb) {
+    uint8_t* ret;
+
+    if(rb->fd >-1 && !(rb->flags & RAM_SHARED) && !(rb->flags & RAM_PMEM) ){
+        // We have a RAM file which is MAP_PRIVATE
+        // so we do not need to memcpy the whole area
+        // (e.g.: -object memory-backend-file,size=4G,id=foo.ram,mem-path=/tmp/mem,share=off,prealloc=off)
+        uint32_t qemu_map_flags = (rb->flags & RAM_READONLY) ? QEMU_MAP_READONLY : 0;
+        qemu_map_flags |= (rb->flags & RAM_NORESERVE) ? QEMU_MAP_NORESERVE : 0;
+        ret = qemu_ram_mmap(rb->fd, rb->max_length, rb->mr->align, qemu_map_flags, rb->fd_offset);
+        assert(ret != MAP_FAILED);
+
+        //Copy "dirty" pages only
+        uint8_t *rb_orig = rb->host;
+        uint8_t *rb_copy = ret;
+        size_t j = 0;
+        for (size_t i = 0; i < rb->max_length; i += TARGET_PAGE_SIZE,
+                    rb_orig += TARGET_PAGE_SIZE, rb_copy += TARGET_PAGE_SIZE) {
+            if(memcmp(rb_copy, rb_orig, TARGET_PAGE_SIZE) != 0){
+                memcpy(rb_copy, rb_orig, TARGET_PAGE_SIZE);
+                j++;
+            }
+        }
+        printf("j: %llu\n", j);
+    } else {
+        //plain copy
+        ret = g_aligned_alloc(1, rb->max_length, qemu_real_host_page_size());
+        memcpy(ret, rb->host, rb->used_length);
+    }
+
+    return ret;
 }
 
 static SyxSnapshot* syx_snapshot_root_new(DeviceSnapshotKind kind,
@@ -115,9 +150,7 @@ static SyxSnapshot* syx_snapshot_root_new(DeviceSnapshotKind kind,
         rb->syx = srb;
         SyxSnapshotInc* root = &srb->incs[0];
         root->seqnum = 1;
-        root->saved_pages =
-            g_aligned_alloc(1, rb->max_length, qemu_real_host_page_size());
-        memcpy(root->saved_pages, rb->host, rb->used_length);
+        root->saved_pages = ramcopy_alloc(rb);
 
         qht_init(&root->dpl, qht_cmp_true, SYX_DPL_INIT_QHT_ELEMS, QHT_MODE_AUTO_RESIZE);
     } 
