@@ -111,15 +111,13 @@ uint8_t *ramcopy_alloc(RAMBlock *rb) {
         //Copy "dirty" pages only
         uint8_t *rb_orig = rb->host;
         uint8_t *rb_copy = ret;
-        size_t j = 0;
+
         for (size_t i = 0; i < rb->max_length; i += TARGET_PAGE_SIZE,
                     rb_orig += TARGET_PAGE_SIZE, rb_copy += TARGET_PAGE_SIZE) {
             if(memcmp(rb_copy, rb_orig, TARGET_PAGE_SIZE) != 0){
                 memcpy(rb_copy, rb_orig, TARGET_PAGE_SIZE);
-                j++;
             }
         }
-        printf("j: %llu\n", j);
     } else {
         //plain copy
         ret = g_aligned_alloc(1, rb->max_length, qemu_real_host_page_size());
