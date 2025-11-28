@@ -50,11 +50,13 @@ int libafl_qemu_toggle_hw_breakpoint(vaddr addr, bool set)
 
 
 static int64_t clock_ctr = 0;
+static int64_t clock_inc = 1000; //to be decreased when we need "time lapse"
 static int64_t get_warped_clock(void) {
     
-    return clock_ctr++;
+    return clock_ctr+=clock_inc;
 }
-void libafl_warp_clock() {
+void libafl_warp_clock_reset() {
     cpus_get_accel()->get_virtual_clock = get_warped_clock;
     clock_ctr=0;
 }
+void libafl_warp_clock_set_inc(int64_t val) { clock_inc = val; }

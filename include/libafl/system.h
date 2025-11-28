@@ -12,7 +12,8 @@ void libafl_qemu_init(int argc, char** argv);
  * @brief Make qemu virtual clock go super slooow 
  * (no more timer interrupts which hamper coverage stability)
  */
-void libafl_warp_clock();
+void libafl_warp_clock_reset();
+void libafl_warp_clock_set_inc(int64_t val);
 
 /** Write to a block device with aio API
  * The same way the guest would, 

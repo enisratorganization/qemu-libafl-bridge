@@ -17,7 +17,7 @@
 #include "system/cpus.h"
 #include "system/cpu-timers.h"
 #include "system/accel-ops.h"
-
+#include "libafl/system.h"
 
 unsigned char before_loglevel[] =
 {
@@ -116,6 +116,14 @@ static void at_sigma_0_run(CPUState *cs, vaddr pc, void *opaque)
     qemu_ram_foreach_block(ram_block_replace, &fr);
 }
 
+
+static void R3_inv(CPUState *cs, vaddr pc, void *opaque)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    cpu->env.regs[3] = 0xabcdef13;
+    return false;
+}
+
 int64_t get_warped_clock(void) {
     static int64_t ctr = 0;
     return ctr++;
@@ -123,9 +131,7 @@ int64_t get_warped_clock(void) {
 
 static void test_timer_warping(CPUState *cs, vaddr pc, void *opaque)
 {
-    ARMCPU *cpu = ARM_CPU(cs);
-    qemu_log_mask(LOG_TRACE, "Test timer %llx\n", pc);
-    cpus_get_accel()->get_virtual_clock = get_warped_clock;
+    libafl_warp_clock_set_inc(1);
 }
 
 void teei_instrument()
@@ -134,5 +140,10 @@ void teei_instrument()
     add_instrument(0xFFFFFF80F00144FC, -1, set_UART_flag_l4, 0); //Debug output --> UART
     //add_instrument(0xFFFFFF80F00258A8, -1, at_sigma_0_run, 0);
 
-    //add_instrument(0x4c40881c, -1, test_timer_warping, 0);
+    // TEST timer warp
+    //libafl_warp_clock_reset();
+    //add_instrument(0x4c409a44, -1, test_timer_warping, 0);
+
+        //add_instrument(0x1003538, -1, R3_inv, 0); //DEBUG CRASH
+    //add_instrument(0x100297C, -1, R3_inv, 0); //DEBUG CRASH
 }
