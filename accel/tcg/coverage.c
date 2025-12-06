@@ -29,9 +29,11 @@ bool comp_coverage_record_tcg_enabled = false;
 
 bool edge_coverage_record_cornercase = true;    // @TODO: make option
 
-//uint64_t testranges[] = {0x70546000, 0x705a5000};
-struct Range *whitelist_pa_ranges = NULL; // testranges;
-size_t num_whitelist_pa_ranges = 1;
+uint64_t testranges[] = {0x7094d000, 0x70a41000,  // km ta
+                         0x70b46000, 0x70b6a000,  // km ta
+                         0x70546000, 0x705a5000}; // libmbedtls
+struct Range *whitelist_pa_ranges = testranges;
+size_t num_whitelist_pa_ranges = 3;
 
 bool is_whitelisted(uint64_t phys_pc) {
     if( whitelist_pa_ranges == NULL )

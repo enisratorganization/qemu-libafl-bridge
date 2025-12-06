@@ -131,7 +131,25 @@ int64_t get_warped_clock(void) {
 
 static void test_timer_warping(CPUState *cs, vaddr pc, void *opaque)
 {
-    libafl_warp_clock_set_inc(1);
+    libafl_dummy_clock_set_inc(1);
+}
+
+extern void gt_recalc_timer(ARMCPU *cpu, int timeridx);
+static void dummy_clock_tick(CPUState *cs, vaddr pc, void *opaque)
+{
+    dummy_clock_inc();
+    bql_lock();
+    gt_recalc_timer(ARM_CPU(cs), GTIMER_SEC);
+    bql_unlock();
+}
+
+//make a huge jump time forward to certainly trigger an interrupt
+static void dummy_clock_huge_lapse(CPUState *cs, vaddr pc, void *opaque)
+{
+    dummy_clock_inc_huge(100);
+    bql_lock();
+    gt_recalc_timer(ARM_CPU(cs), GTIMER_SEC);
+    bql_unlock();
 }
 
 void teei_instrument()
@@ -141,9 +159,11 @@ void teei_instrument()
     //add_instrument(0xFFFFFF80F00258A8, -1, at_sigma_0_run, 0);
 
     // TEST timer warp
-    //libafl_warp_clock_reset();
-    //add_instrument(0x4c409a44, -1, test_timer_warping, 0);
+    add_instrument(0x4c408b74, -1, test_timer_warping, 0);
 
-        //add_instrument(0x1003538, -1, R3_inv, 0); //DEBUG CRASH
+    add_instrument(0xFFFFFF80F00AC1A0, -1, dummy_clock_tick, 0);
+    add_instrument(0xFFFFFF80F00AC1B8, -1, dummy_clock_tick, 0);
+
+    // add_instrument(0x1003538, -1, R3_inv, 0); //DEBUG CRASH
     //add_instrument(0x100297C, -1, R3_inv, 0); //DEBUG CRASH
 }

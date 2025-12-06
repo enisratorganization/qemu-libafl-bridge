@@ -104,6 +104,12 @@ extern QEMUTimerListGroup main_loop_tlg;
  */
 int64_t qemu_clock_get_ns(QEMUClockType type);
 
+#ifdef DUMMY_TIMERS
+void dummy_clock_inc(void);
+void dummy_clock_inc_huge(int64_t multiple);
+void dummy_clock_set_inc(int64_t val);
+#endif
+
 /**
  * qemu_clock_get_ms;
  * @type: the clock type
@@ -833,6 +839,12 @@ static inline int64_t get_clock(void)
 
 extern int use_rt_clock;
 
+#ifdef DUMMY_TIMERS
+static inline int64_t get_clock(void)
+{
+    return 0;
+}
+#else
 static inline int64_t get_clock(void)
 {
     if (use_rt_clock) {
@@ -845,6 +857,8 @@ static inline int64_t get_clock(void)
         return get_clock_realtime();
     }
 }
+#endif
+
 #endif
 
 /*******************************************/

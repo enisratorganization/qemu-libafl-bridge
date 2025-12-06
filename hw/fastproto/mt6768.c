@@ -144,6 +144,7 @@ static void mt6768_init(MachineState * machine)
     {
         Object *cpuobj = object_new(machine->cpu_type);
         object_property_add_child(machine, "cpu[*]", cpuobj);
+        object_property_set_int(cpuobj, "cntfrq", 1000000000, &error_fatal);
         qdev_prop_set_bit(cpuobj, "start-powered-off", n > 0);
         //qdev_prop_set_uint64(cpuobj, "mp_affinity", )
         qdev_realize(cpuobj, NULL, &error_fatal);

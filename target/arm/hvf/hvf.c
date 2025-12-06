@@ -1322,6 +1322,7 @@ static int hvf_sysreg_read(CPUState *cpu, uint32_t reg, uint64_t *val)
 
     switch (reg) {
     case SYSREG_CNTPCT_EL0:
+        dummy_clock_inc();
         *val = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) /
               gt_cntfrq_period_ns(arm_cpu);
         return 0;
