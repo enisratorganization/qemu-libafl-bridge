@@ -159,17 +159,12 @@ static SyxSnapshot* syx_snapshot_root_new(DeviceSnapshotKind kind,
 static void save_pages(void* p, uint32_t h, void* up) {
     SyxSnapshotInc* sinc = ((void**)up)[0];
     RAMBlock* rb = ((void**)up)[1];
-    ram_addr_t *min  = &((void**)up)[2];
-    ram_addr_t *max  = &((void**)up)[3];
-    uintptr_t *any  = &((void**)up)[4];
-    *any = 1;
 
     ram_addr_t offset = ((ram_addr_t)h) << TARGET_PAGE_BITS;
     size_t seq = p;
     memcpy(sinc->saved_pages+ (seq-1)*TARGET_PAGE_SIZE, rb->host + offset, TARGET_PAGE_SIZE);
 
-    if(offset < *min) *min = offset;
-    if(offset > *max) *max = offset;
+    cpu_physical_memory_test_and_clear_dirty(rb->offset + offset, TARGET_PAGE_SIZE, DIRTY_MEMORY_MIGRATION); 
 }
 void syx_snapshot_increment_push(SyxSnapshot* snapshot, DeviceSnapshotKind kind,
                                  char** devices)
@@ -198,22 +193,9 @@ void syx_snapshot_increment_push(SyxSnapshot* snapshot, DeviceSnapshotKind kind,
         sinc->saved_pages = g_aligned_alloc(PAGESZ, numdirty, qemu_real_host_page_size());
 
         // Copy pages changed since last snapshot
-        void* arg[5] = {sinc, rb, -1, 0, 0};
+        void* arg[2] = {sinc, rb};
         qht_iter(&srb->incs[inc-1].dpl, save_pages, arg);
        
-        // reset QEMU dirty page tracking
-        // trying to reduce the range as this is quite costly
-        uintptr_t *any  = &arg[4];
-        if(*any) {
-            ram_addr_t min  = *(ram_addr_t*)&arg[2];
-            ram_addr_t max  = *(ram_addr_t*)&arg[3];           
-            cpu_physical_memory_test_and_clear_dirty(rb->offset + min, (max-min+1), DIRTY_MEMORY_MIGRATION); 
-            #ifdef SYX_SNAPSHOT_DEBUG
-            printf("cpu_physical_memory_test_and_clear_dirty: @%llx , %llx-%llx\n", rb->mr->addr, min, max);
-            printf("clean: %d\n", cpu_physical_memory_get_dirty(rb->offset, rb->used_length, DIRTY_MEMORY_MIGRATION));
-            #endif
-        }
-
         if(!sinc->dpl.map) 
             qht_init(&sinc->dpl, qht_cmp_true, SYX_DPL_INIT_QHT_ELEMS, QHT_MODE_AUTO_RESIZE);
 
@@ -228,32 +210,26 @@ static void restore_pages(void* p, uint32_t h, void* up) {
     RAMBlock* rb = ((void**)up)[0];
     SyxSnapshot* snap = ((void**)up)[1];
     size_t inc  = ((void**)up)[2];
-    ram_addr_t *min  = &((void**)up)[3];
-    ram_addr_t *max  = &((void**)up)[4];
-    uintptr_t *any  = &((void**)up)[5];
-    *any = 1;
 
     SyxSnapshotRAMBlock* srb = rb->syx;
 
     ram_addr_t offset = ((ram_addr_t)h) << TARGET_PAGE_BITS;
     size_t seq = p;
 
-    if(offset < *min) *min = offset;
-    if(offset > *max) *max = offset;
-
     // search for hit in DPLs top to bottom
     while(inc > 0) {
         size_t oldseq = qht_lookup(&srb->incs[inc - 1].dpl, NULL, h);
         if(oldseq) {
             memcpy(rb->host + offset, srb->incs[inc].saved_pages+  TARGET_PAGE_SIZE*(oldseq-1), TARGET_PAGE_SIZE);
-            goto tb_inv;
+            goto tb_inv_and_clear_dirty;
         }
         inc--;
     }
     //if we have come here, restore from root snapshot(0), which contains all RAM
     memcpy(rb->host + offset, srb->incs[0].saved_pages + offset, TARGET_PAGE_SIZE);
 
-    tb_inv:
+    tb_inv_and_clear_dirty:
+        cpu_physical_memory_test_and_clear_dirty(rb->offset + offset, TARGET_PAGE_SIZE, DIRTY_MEMORY_MIGRATION);
         // Invalidate TBs
         tb_invalidate_phys_range(rb->offset + offset,
         rb->offset + offset + TARGET_PAGE_SIZE - 1);
@@ -266,24 +242,11 @@ void restore_pages_and_mark_notdirty(RAMBlock *rb, SyxSnapshot *snap, size_t inc
     SyxSnapshotInc *sinc = &srb->incs[inc];
 
     // Copy pages back to hostmem
-    void* arg[6] = {rb, snap, inc, -1, 0, 0};
+    void* arg[3] = {rb, snap, inc};
     qht_iter(&sinc->dpl, restore_pages, arg);
 
     qht_reset(&sinc->dpl);
     sinc->seqnum = 1;
-
-    // reset QEMU dirty page tracking
-    // trying to reduce the range as this is quite costly
-    uintptr_t *any  = &arg[5];
-    if(*any) {
-        ram_addr_t min  = *(ram_addr_t*)&arg[3];
-        ram_addr_t max  = *(ram_addr_t*)&arg[4];            
-        cpu_physical_memory_test_and_clear_dirty(rb->offset + min, (max-min+TARGET_PAGE_SIZE-1), DIRTY_MEMORY_MIGRATION); 
-        #ifdef SYX_SNAPSHOT_DEBUG
-        printf("cpu_physical_memory_test_and_clear_dirty: @%llx , %llx-%llx\n", rb->mr->addr, min, max);
-        printf("clean: %d\n", cpu_physical_memory_get_dirty(rb->offset, rb->used_length, DIRTY_MEMORY_MIGRATION));
-        #endif
-    }
 }
 
 
