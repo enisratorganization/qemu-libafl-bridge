@@ -8,12 +8,13 @@ int libafl_qemu_remove_hw_breakpoint(vaddr addr);
 
 void libafl_qemu_init(int argc, char** argv);
 
+#ifdef DUMMY_TIMERS
 /**
- * @brief Make qemu virtual clock go super slooow 
+ * @brief Make qemu virtual clock go super slooow by setting low value here
  * (no more timer interrupts which hamper coverage stability)
  */
-void libafl_warp_clock_reset();
-void libafl_warp_clock_set_inc(int64_t val);
+void libafl_dummy_clock_set_inc(int64_t val);
+#endif
 
 /** Write to a block device with aio API
  * The same way the guest would, 

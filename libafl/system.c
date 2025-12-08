@@ -48,4 +48,6 @@ int libafl_qemu_toggle_hw_breakpoint(vaddr addr, bool set)
     return 0;
 }
 
-void libafl_warp_clock_set_inc(int64_t val) { dummy_clock_set_inc(val); }
+#ifdef DUMMY_TIMERS
+void libafl_dummy_clock_set_inc(int64_t val) { dummy_clock_set_inc(val); }
+#endif

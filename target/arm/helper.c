@@ -2641,11 +2641,20 @@ static void gt_timer_reset(CPUARMState *env, const ARMCPRegInfo *ri,
     timer_del(cpu->gt_timer[timeridx]);
 }
 
+#ifdef DUMMY_TIMERS
+void dummy_clock_inc_arm(ARMCPU *cpu){
+    BQL_LOCK_GUARD();
+    dummy_clock_inc();
+    for(int i=0;i<NUM_GTIMERS;i++) {
+        void gt_recalc_timer(cpu, i);
+    }
+}
+#endif
+
 static uint64_t gt_cnt_read(CPUARMState *env, const ARMCPRegInfo *ri)
 {
     #ifdef DUMMY_TIMERS
-    //advance dummy clocks to make guest naively deterministic
-    dummy_clock_inc();
+    dummy_clock_inc_arm(env_archcpu(env));
     #endif
 
     uint64_t offset = gt_direct_access_timer_offset(env, GTIMER_PHYS);
@@ -2655,8 +2664,7 @@ static uint64_t gt_cnt_read(CPUARMState *env, const ARMCPRegInfo *ri)
 static uint64_t gt_virt_cnt_read(CPUARMState *env, const ARMCPRegInfo *ri)
 {
     #ifdef DUMMY_TIMERS
-    //advance dummy clocks to make guest naively deterministic
-    dummy_clock_inc();
+    dummy_clock_inc_arm(env_archcpu(env));
     #endif
 
     uint64_t offset = gt_direct_access_timer_offset(env, GTIMER_VIRT);
@@ -2675,8 +2683,7 @@ static void gt_cval_write(CPUARMState *env, const ARMCPRegInfo *ri,
 static uint64_t do_tval_read(CPUARMState *env, int timeridx, uint64_t offset)
 {
     #ifdef DUMMY_TIMERS
-    //advance dummy clocks to make guest naively deterministic
-    dummy_clock_inc();
+    dummy_clock_inc_arm(env_archcpu(env));
     #endif
 
     return (uint32_t)(env->cp15.c14_timer[timeridx].cval -

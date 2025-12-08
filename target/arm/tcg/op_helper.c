@@ -385,9 +385,7 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
     #ifdef DUMMY_TIMERS
     // deterministically jump forward in time to certainly trigger timer interrupt
     dummy_clock_inc_huge(10000);
-    bql_lock();
-    gt_recalc_timer(env_archcpu(env), GTIMER_SEC);
-    bql_unlock();
+    dummy_clock_inc_arm(env_archcpu(env));
     #endif
 
     CPUState *cs = env_cpu(env);

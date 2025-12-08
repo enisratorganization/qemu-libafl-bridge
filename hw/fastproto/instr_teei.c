@@ -50,7 +50,7 @@ unsigned char replace_loglevel[] =
   0x00, 0xEA
 };
 
-static void retN(CPUState *cs, vaddr pc, void *opaque)
+static bool retN(CPUState *cs, vaddr pc, void *opaque)
 {
     qemu_log_mask(LOG_TRACE, "HIT instrument @%llx cpu %d %llx\n", pc, cs->cpu_index, opaque);
     ARMCPU *cpu = ARM_CPU(cs);
@@ -60,14 +60,14 @@ static void retN(CPUState *cs, vaddr pc, void *opaque)
 }
 
 // Helper function to set X0 to 0
-static void setX0_0(CPUState *cs, vaddr pc, void *opaque)
+static bool setX0_0(CPUState *cs, vaddr pc, void *opaque)
 {
     ARMCPU *cpu = ARM_CPU(cs);
     cpu->env.xregs[0] = 0;
     return false;
 }
 
-static void set_UART_flag(CPUState *cs, vaddr pc, void *opaque)
+static bool set_UART_flag(CPUState *cs, vaddr pc, void *opaque)
 {
     ARMCPU *cpu = ARM_CPU(cs);
     cpu->env.xregs[0] |= 0x200;
@@ -102,68 +102,68 @@ static int ram_block_replace(RAMBlock *rb, void *opaque)
     return 0;
 }
 
-static void set_UART_flag_l4(CPUState *cs, vaddr pc, void *opaque)
+static bool set_UART_flag_l4(CPUState *cs, vaddr pc, void *opaque)
 {
     ARMCPU *cpu = ARM_CPU(cs);
     cpu->env.xregs[0] |= 1;
     return false;
 }
 
-static void at_sigma_0_run(CPUState *cs, vaddr pc, void *opaque)
+static bool at_sigma_0_run(CPUState *cs, vaddr pc, void *opaque)
 {
     // find the "loglevel" check in libuTlog.so (starting from physaddr 0x70000000)
     struct find_replace fr = {.find = before_loglevel, .replace = replace_loglevel, .len = sizeof(before_loglevel), .ramoff=0x30000000, .ramlimit = 0x8000000};
     qemu_ram_foreach_block(ram_block_replace, &fr);
+    return false;
 }
 
-
-static void R3_inv(CPUState *cs, vaddr pc, void *opaque)
+static bool R3_inv(CPUState *cs, vaddr pc, void *opaque)
 {
     ARMCPU *cpu = ARM_CPU(cs);
     cpu->env.regs[3] = 0xabcdef13;
     return false;
 }
 
-int64_t get_warped_clock(void) {
-    static int64_t ctr = 0;
-    return ctr++;
+// for debugging inside LibAFL
+static bool infinite(CPUState *cs, vaddr pc, void *opaque)
+{
+    static uint64_t infinite_trigger = 0;
+    infinite_trigger++;
+    if(infinite_trigger>=8) return true;
+    else return false;
 }
 
-static void test_timer_warping(CPUState *cs, vaddr pc, void *opaque)
+#ifdef DUMMY_TIMERS
+static bool test_timer_warping(CPUState *cs, vaddr pc, void *opaque)
 {
     libafl_dummy_clock_set_inc(1);
+    return false;
 }
 
-extern void gt_recalc_timer(ARMCPU *cpu, int timeridx);
-static void dummy_clock_tick(CPUState *cs, vaddr pc, void *opaque)
+static bool dummy_clock_tick(CPUState *cs, vaddr pc, void *opaque)
 {
-    dummy_clock_inc();
-    bql_lock();
-    gt_recalc_timer(ARM_CPU(cs), GTIMER_SEC);
-    bql_unlock();
+    dummy_clock_inc_arm(ARM_CPU(cs));
+    return false;
 }
-
-//make a huge jump time forward to certainly trigger an interrupt
-static void dummy_clock_huge_lapse(CPUState *cs, vaddr pc, void *opaque)
-{
-    dummy_clock_inc_huge(100);
-    bql_lock();
-    gt_recalc_timer(ARM_CPU(cs), GTIMER_SEC);
-    bql_unlock();
-}
+#endif
 
 void teei_instrument()
 {
     add_instrument(0xFFF007354 , -1, set_UART_flag, 0); //Debug output --> UART
     add_instrument(0xFFFFFF80F00144FC, -1, set_UART_flag_l4, 0); //Debug output --> UART
-    //add_instrument(0xFFFFFF80F00258A8, -1, at_sigma_0_run, 0);
+    add_instrument(0xFFFFFF80F00258A8, -1, at_sigma_0_run, 0);
 
+    #ifdef DUMMY_TIMERS
     // TEST timer warp
-    add_instrument(0x4c408b74, -1, test_timer_warping, 0);
+    //add_instrument(0x4C409044, -1, test_timer_warping, 0);
 
     add_instrument(0xFFFFFF80F00AC1A0, -1, dummy_clock_tick, 0);
     add_instrument(0xFFFFFF80F00AC1B8, -1, dummy_clock_tick, 0);
+    #endif
 
     // add_instrument(0x1003538, -1, R3_inv, 0); //DEBUG CRASH
     //add_instrument(0x100297C, -1, R3_inv, 0); //DEBUG CRASH
+
+    // wait at km_start. For DEBUGGING inside LibAFL
+    //add_instrument(0x1116F00, -1, infinite, 0);
 }
