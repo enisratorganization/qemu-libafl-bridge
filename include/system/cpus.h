@@ -5,7 +5,7 @@
 void cpus_register_accel(const AccelOpsClass *i);
 
 /* return registers ops */
-AccelOpsClass *cpus_get_accel(void);
+const AccelOpsClass *cpus_get_accel(void);
 
 /* accel/dummy-cpus.c */
 
