@@ -616,6 +616,32 @@ int64_t timerlistgroup_deadline_ns(QEMUTimerListGroup *tlg)
     return deadline;
 }
 
+#ifdef DUMMY_TIMERS
+#include "qemu/seqlock.h"
+#include "system/cpu-timers-internal.h"
+
+static int64_t dummy_timer_inc = 1000;
+int64_t qemu_clock_get_ns(QEMUClockType type)
+{
+    return timers_state.cpu_clock_offset;
+}
+void dummy_clock_inc(void)
+{
+    qemu_spin_lock(&timers_state.vm_clock_lock);
+    timers_state.cpu_clock_offset += dummy_timer_inc;
+    qemu_spin_unlock(&timers_state.vm_clock_lock);
+}
+void dummy_clock_inc_huge(int64_t multiple)
+{
+    qemu_spin_lock(&timers_state.vm_clock_lock);
+    timers_state.cpu_clock_offset += (dummy_timer_inc*multiple);
+    qemu_spin_unlock(&timers_state.vm_clock_lock);
+}
+void dummy_clock_set_inc(int64_t val)
+{
+    dummy_timer_inc = val;
+}
+#else
 int64_t qemu_clock_get_ns(QEMUClockType type)
 {
     switch (type) {
@@ -630,6 +656,7 @@ int64_t qemu_clock_get_ns(QEMUClockType type)
         return REPLAY_CLOCK(REPLAY_CLOCK_VIRTUAL_RT, cpu_get_clock());
     }
 }
+#endif
 
 static void qemu_virtual_clock_set_ns(int64_t time)
 {

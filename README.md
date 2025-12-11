@@ -6,6 +6,16 @@ This raw interface is used in `libafl_qemu` that expose a more Rusty API.
 
 To use `libafl_qemu`, refer to the [LibAFL](https://github.com/AFLplusplus/LibAFL) repository, especially the [qemu](https://github.com/AFLplusplus/LibAFL/tree/main/fuzzers/qemu) fuzzer example.
 
+## Notes for Build
+
+Does not build with all features enabled. for example, this works:
+```
+mkdir build; cd build
+../configure --target-list=aarch64-softmmu --enable-debug --disable-werror --enable-gcrypt --disable-tools --disable-tests --disable-guest-agent
+make qemu-system-aarch64
+```
+Building tools other than the `qemu-xxx` binary is not supported here!
+
 #### License
 
 <sup>

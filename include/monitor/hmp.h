@@ -182,5 +182,7 @@ void hmp_dumpdtb(Monitor *mon, const QDict *qdict);
 void hmp_syx_snapshot_new(Monitor *mon, const QDict *qdict);
 void hmp_syx_snapshot_root_restore(Monitor *mon, const QDict *qdict);
 void hmp_syx_snapshot_init(Monitor *mon, const QDict *qdict);
+void hmp_syx_snapshot_increment_push(Monitor *mon, const QDict *qdict);
+void hmp_syx_snapshot_increment_pop(Monitor *mon, const QDict *qdict);
 
 #endif

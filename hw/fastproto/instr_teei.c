@@ -1,0 +1,150 @@
+#include "qemu/osdep.h"
+#include "qapi/error.h"
+#include "qemu/error-report.h"
+#include "qemu/units.h"
+#include "hw/boards.h"
+#include "exec/memory.h"
+#include "target/arm/cpu-qom.h"
+#include "target/arm/gtimer.h"
+#include "hw/arm/bsa.h"
+#include "exec/address-spaces.h"
+#include "hw/core/cpu.h"
+#include "qobject/qlist.h"
+#include "target/arm/cpu.h"
+#include "libafl/instrument.h"
+#include "crypto/hash.h"
+#include "qemu/log.h"
+#include "system/cpus.h"
+#include "system/cpu-timers.h"
+#include "system/accel-ops.h"
+#include "libafl/system.h"
+#include "loglevel.inc.h"
+
+#ifdef __OPTIMIZE__
+#define REDUCE_LOGGING
+#endif
+
+#define REDUCE_LOGGING
+
+static bool retN(CPUState *cs, vaddr pc, void *opaque)
+{
+    qemu_log_mask(LOG_TRACE, "HIT instrument @%llx cpu %d %llx\n", pc, cs->cpu_index, opaque);
+    ARMCPU *cpu = ARM_CPU(cs);
+    cpu->env.xregs[0] = (uint64_t)opaque;
+    cpu->env.pc = cpu->env.xregs[30];
+    return true;
+}
+
+// Helper function to set X0 to 0
+static bool setX0_0(CPUState *cs, vaddr pc, void *opaque)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    cpu->env.xregs[0] = 0;
+    return false;
+}
+
+static bool set_UART_flag(CPUState *cs, vaddr pc, void *opaque)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    cpu->env.xregs[0] |= 0x200;
+    return false;
+}
+
+
+struct find_replace{
+    uint8_t *find;
+    uint8_t *replace;
+    int len;
+    long ramoff;
+    long ramlimit;
+};
+static int ram_block_replace(RAMBlock *rb, void *opaque)
+{
+    ram_addr_t size = qemu_ram_get_used_length(rb);
+    uint8_t *host = qemu_ram_get_host_addr(rb);
+    struct find_replace *fr = opaque;
+
+    if(size > fr->ramoff) {
+        if(fr->ramoff + fr->ramlimit < size)
+            size = fr->ramoff + fr->ramlimit;
+
+        uint8_t *hit = host + fr->ramoff;
+        do{
+            hit = memmem(hit, size - (hit-host), fr->find, fr->len);
+            if(hit){
+                memcpy(hit, fr->replace, fr->len);
+                qemu_log_mask(LOG_TRACE, "Replace @%llx\n", (hit-host));
+            }
+        } while (hit);
+    }
+    return 0;
+}
+
+static bool set_UART_flag_l4(CPUState *cs, vaddr pc, void *opaque)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    cpu->env.xregs[0] |= 1;
+    return false;
+}
+
+static bool at_sigma_0_run(CPUState *cs, vaddr pc, void *opaque)
+{
+    // find the "loglevel" check in libuTlog.so (starting from physaddr 0x70000000)
+    struct find_replace fr = {.find = before_loglevel, .replace = replace_loglevel_high, .len = sizeof(before_loglevel), .ramoff=0x30000000, .ramlimit = 0x8000000};
+    #ifdef REDUCE_LOGGING
+    fr.replace = replace_loglevel_none;
+    #endif
+    qemu_ram_foreach_block(ram_block_replace, &fr);
+    return false;
+}
+
+static bool R3_inv(CPUState *cs, vaddr pc, void *opaque)
+{
+    ARMCPU *cpu = ARM_CPU(cs);
+    cpu->env.regs[3] = 0xabcdef13;
+    return false;
+}
+
+// for debugging inside LibAFL
+static bool infinite(CPUState *cs, vaddr pc, void *opaque)
+{
+    static uint64_t infinite_trigger = 0;
+    infinite_trigger++;
+    if(infinite_trigger>=8) return true;
+    else return false;
+}
+
+#ifdef DUMMY_TIMERS
+static bool test_timer_warping(CPUState *cs, vaddr pc, void *opaque)
+{
+    libafl_dummy_clock_set_inc(1);
+    return false;
+}
+
+static bool dummy_clock_tick(CPUState *cs, vaddr pc, void *opaque)
+{
+    dummy_clock_inc_arm(ARM_CPU(cs));
+    return false;
+}
+#endif
+
+void teei_instrument()
+{
+    add_instrument(0xFFF007354 , -1, set_UART_flag, 0); //Debug output --> UART
+    add_instrument(0xFFFFFF80F00144FC, -1, set_UART_flag_l4, 0); //Debug output --> UART
+    add_instrument(0xFFFFFF80F00258A8, -1, at_sigma_0_run, 0);
+
+    #ifdef DUMMY_TIMERS
+    // TEST timer warp
+    //add_instrument(0x4C409044, -1, test_timer_warping, 0);
+
+    add_instrument(0xFFFFFF80F00AC1A0, -1, dummy_clock_tick, 0);
+    add_instrument(0xFFFFFF80F00AC1B8, -1, dummy_clock_tick, 0);
+    #endif
+
+    // add_instrument(0x1003538, -1, R3_inv, 0); //DEBUG CRASH
+    //add_instrument(0x100297C, -1, R3_inv, 0); //DEBUG CRASH
+
+    // wait at km_start. For DEBUGGING inside LibAFL
+    //add_instrument(0x1116F00, -1, infinite, 0);
+}

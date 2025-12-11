@@ -47,3 +47,7 @@ int libafl_qemu_toggle_hw_breakpoint(vaddr addr, bool set)
 
     return 0;
 }
+
+#ifdef DUMMY_TIMERS
+void libafl_dummy_clock_set_inc(int64_t val) { dummy_clock_set_inc(val); }
+#endif

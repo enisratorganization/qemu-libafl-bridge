@@ -1899,10 +1899,35 @@ ERST
     },
 
 SRST
-``syx-snapshot-identified``
+``syx-snapshot-init``
   Init syx.
 ERST
 
+    {
+        .name       = "syx-snapshot-increment-push",
+        .args_type  = "",
+        .params     = "",
+        .help       = "Push incremental snapshot",
+        .cmd        = hmp_syx_snapshot_increment_push,
+    },
+
+SRST
+``syx-snapshot-increment-push``
+  Syx push.
+ERST
+
+    {
+        .name       = "syx-snapshot-increment-pop",
+        .args_type  = "",
+        .params     = "",
+        .help       = "Pop incremental snapshot",
+        .cmd        = hmp_syx_snapshot_increment_pop,
+    },
+
+SRST
+``syx-snapshot-increment-pop``
+  Pop syx.
+ERST
 
 /**
 * Commands for coverage recording

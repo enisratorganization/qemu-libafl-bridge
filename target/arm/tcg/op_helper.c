@@ -367,6 +367,7 @@ static inline int check_wfx_trap(CPUARMState *env, bool is_wfe, uint32_t *excp)
 }
 #endif
 
+extern void gt_recalc_timer(ARMCPU *cpu, int timeridx);
 void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
 {
 #ifdef CONFIG_USER_ONLY
@@ -380,6 +381,13 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
      */
     return;
 #else
+
+    #ifdef DUMMY_TIMERS
+    // deterministically jump forward in time to certainly trigger timer interrupt
+    dummy_clock_inc_huge(10000);
+    dummy_clock_inc_arm(env_archcpu(env));
+    #endif
+
     CPUState *cs = env_cpu(env);
     uint32_t excp;
     int target_el = check_wfx_trap(env, false, &excp);

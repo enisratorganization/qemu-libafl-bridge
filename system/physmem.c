@@ -1648,11 +1648,6 @@ void qemu_ram_set_idstr(RAMBlock *new_block, const char *name, DeviceState *dev)
         }
     }
     pstrcat(new_block->idstr, sizeof(new_block->idstr), name);
-//// --- Begin LibAFL code ---
-
-    new_block->idstr_hash = g_str_hash(new_block->idstr);
-
-//// --- End LibAFL code ---
 
     RCU_READ_LOCK_GUARD();
     RAMBLOCK_FOREACH(block) {

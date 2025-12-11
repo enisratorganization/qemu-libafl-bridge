@@ -20,4 +20,9 @@ enum {
 #define NUM_GTIMERS   7
 };
 
+#ifdef DUMMY_TIMERS
+//advance dummy clocks to make guest naively deterministic
+void dummy_clock_inc_arm(ARMCPU *cpu);
+#endif
+
 #endif

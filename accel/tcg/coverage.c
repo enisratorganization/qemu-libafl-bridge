@@ -32,7 +32,7 @@ bool edge_coverage_record_cornercase = true;    // @TODO: make option
 
 //struct Range *whitelist_pa_ranges = NULL;
 struct Range *whitelist_pa_ranges = NULL;
-size_t num_whitelist_pa_ranges = 1;
+size_t num_whitelist_pa_ranges = 0;
 
 bool is_whitelisted(uint64_t phys_pc) {
     if( whitelist_pa_ranges == NULL )

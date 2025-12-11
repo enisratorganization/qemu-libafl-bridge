@@ -18,6 +18,7 @@ typedef struct  {
 	int cpu_index;	/* -1 = matches all vCPU IDs */
 	InstrumentCallback cb;
 	void *opaque;
+    bool enabled;
 } InstrBreakpoint;
 
 struct qht htable = {0};
@@ -91,7 +92,7 @@ bool call_instrument_cb(CPUState *cs, vaddr pc) {
 		InstrBreakpoint* b =
 			qht_lookup_custom(&htable, &desc, QHT_PC_HASH(pc), pc_is_instrumented);
 
-		if (b != NULL) {
+		if (b != NULL && b->enabled) {
 			return b->cb(cs, pc, b->opaque);
 		} else {
 			return false;
@@ -111,11 +112,15 @@ bool add_instrument(vaddr pc, int cpu_index, InstrumentCallback cb, void *opaque
 	b->cpu_index = cpu_index;
 	b->cb = cb;
 	b->opaque = opaque;
+	b->enabled = true;
 
-	void *existing = NULL;
-	qht_insert(&htable, (void *) b, QHT_PC_HASH(pc), &existing);
+	InstrBreakpoint *existing = NULL;
 
-	return existing == NULL;
+	if(!qht_insert(&htable, (void *) b, QHT_PC_HASH(pc), &existing)) {
+        existing->enabled = true;
+        return false;
+    }
+    return true;
 };
 
 bool remove_instrument(vaddr pc, int cpu_index) {
@@ -129,6 +134,34 @@ bool remove_instrument(vaddr pc, int cpu_index) {
 		qht_remove(&htable, ht_elem, QHT_PC_HASH(pc));
 		return true;
 	}
+	return false;
+};
+
+bool deactivate_instrument(vaddr pc, int cpu_index) {
+	InstrBreakpoint b;
+
+	b.pc = pc;
+	b.cpu_index = cpu_index;
+
+	InstrBreakpoint *hit = qht_lookup(&htable, &b, QHT_PC_HASH(pc));
+	if( hit != NULL ){
+		hit->enabled = false;
+		return true;
+    }
+	return false;
+};
+
+bool reactivate_instrument(vaddr pc, int cpu_index) {
+	InstrBreakpoint b;
+
+	b.pc = pc;
+	b.cpu_index = cpu_index;
+
+	InstrBreakpoint *hit = qht_lookup(&htable, &b, QHT_PC_HASH(pc));
+	if( hit != NULL ){
+		hit->enabled = true;
+		return true;
+    }
 	return false;
 };
 

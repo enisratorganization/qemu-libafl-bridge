@@ -263,7 +263,7 @@ void qemu_timer_notify_cb(void *opaque, QEMUClockType type)
     }
 }
 
-TimersState timers_state;
+TimersState timers_state = {0};
 
 /* initialize timers state and the cpu throttle for convenience */
 void cpu_timers_init(void)

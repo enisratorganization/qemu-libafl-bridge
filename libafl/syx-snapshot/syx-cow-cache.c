@@ -5,6 +5,15 @@
 
 #define IS_POWER_OF_TWO(x) ((x != 0) && ((x & (x - 1)) == 0))
 
+static void destroy_SyxCowCacheDevice(gpointer p)
+{
+    SyxCowCacheDevice *sccd = p;
+
+    // assume hash table is already empty (handled by other function before)
+    g_hash_table_destroy(sccd->positions);
+    g_array_free(sccd->data, true);
+}
+
 SyxCowCache* syx_cow_cache_new(void)
 {
     SyxCowCache* cache = g_new0(SyxCowCache, 2);
@@ -26,7 +35,7 @@ void syx_cow_cache_push_layer(SyxCowCache* scc, uint64_t chunk_size,
     SyxCowCacheLayer* new_layer = g_new0(SyxCowCacheLayer, 1);
 
     new_layer->cow_cache_devices =
-        g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, NULL);
+        g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, destroy_SyxCowCacheDevice);
     new_layer->chunk_size = chunk_size;
     new_layer->max_nb_chunks = max_size;
 
@@ -38,7 +47,13 @@ void syx_cow_cache_push_layer(SyxCowCache* scc, uint64_t chunk_size,
 
 void syx_cow_cache_pop_layer(SyxCowCache* scc)
 {
-    // TODO
+    // TODO ?
+    syx_cow_cache_flush_highest_layer(scc);
+
+    SyxCowCacheLayer* head = QTAILQ_FIRST(&scc->layers);
+    g_hash_table_destroy(head->cow_cache_devices);
+    g_free(head);
+    QTAILQ_REMOVE(&scc->layers, head, next);
 }
 
 static void flush_device_layer(gpointer _blk_name_hash, gpointer cache_device,
