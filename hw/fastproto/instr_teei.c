@@ -24,7 +24,6 @@
 #define REDUCE_LOGGING
 #endif
 
-#define REDUCE_LOGGING
 
 static bool retN(CPUState *cs, vaddr pc, void *opaque)
 {

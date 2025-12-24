@@ -98,6 +98,12 @@ void syx_snapshot_increment_pop(SyxSnapshot* snapshot);
 
 void syx_snapshot_increment_restore_last(SyxSnapshot* snapshot);
 
+//simplified argument-less versions of the above using singleton snapshot
+void syx_the_snapshot_root_restore(void);
+void syx_the_snapshot_increment_push(void);
+void syx_the_snapshot_increment_pop(void);
+void syx_the_snapshot_increment_restore_last(void);
+uint64_t syx_snapshot_get_num_dirty(void);
 
 //
 // Misc functions

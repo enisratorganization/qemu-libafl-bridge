@@ -456,3 +456,33 @@ bool syx_snapshot_cow_cache_write_entry(BlockBackend* blk, int64_t offset,
         return true;
     }
 }
+
+
+void syx_the_snapshot_root_restore(void) {
+    syx_snapshot_root_restore(syx_snapshot_state.thesnap);
+}
+void syx_the_snapshot_increment_push(void) {
+    syx_snapshot_increment_push(syx_snapshot_state.thesnap, DEVICE_SNAPSHOT_ALL, NULL);
+}
+void syx_the_snapshot_increment_pop(void) {
+    syx_snapshot_increment_pop(syx_snapshot_state.thesnap);
+}
+void syx_the_snapshot_increment_restore_last(void) {
+    syx_snapshot_increment_restore_last(syx_snapshot_state.thesnap);
+}
+
+uint64_t syx_snapshot_get_num_dirty(void) {
+    SyxSnapshot* snapshot = syx_snapshot_state.thesnap;
+
+    uint64_t num_dirty = 0;
+
+    RAMBlock* rb;
+    RCU_READ_LOCK_GUARD();
+    RAMBLOCK_FOREACH(rb)
+    {
+        SyxSnapshotRAMBlock* srb = rb->syx;
+        num_dirty += srb->incs[snapshot->inc].seqnum-1;
+    }
+
+    return num_dirty;
+}
