@@ -720,7 +720,7 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
         *ret = cpu->exception_index;
         cpu->exception_index = -1;
         
-        libafl_sync_exit_cpu();
+        libafl_sync_exit_cpu(cpu);
         return true; 
     }
 

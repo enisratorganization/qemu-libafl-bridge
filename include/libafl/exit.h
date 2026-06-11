@@ -74,7 +74,7 @@ CPUState* libafl_last_exit_cpu(void);
 
 void libafl_exit_signal_vm_start(void);
 bool libafl_exit_asap(void);
-void libafl_sync_exit_cpu(void);
+void libafl_sync_exit_cpu(CPUState* cpu);
 
 void libafl_exit_request_internal(CPUState* cpu, uint64_t pc,
                                   ShutdownCause cause, int signal);

@@ -46,8 +46,15 @@ static THREAD_MODIFIER bool expected_exit = false;
 #endif
 
 // called before exiting the cpu exec with the custom exception
-void libafl_sync_exit_cpu(void)
+void libafl_sync_exit_cpu(CPUState *cpu)
 {
+    if(last_exit_reason.cpu == NULL) {
+        //warn_report("last_exit_reason.cpu == NULL");
+        last_exit_reason.cpu = cpu;
+    } else if (last_exit_reason.cpu != cpu) {
+        //warn_report("last_exit_reason.cpu != cpu");
+        last_exit_reason.cpu = cpu;
+    }
     if (last_exit_reason.next_pc) {
         CPUClass* cc = CPU_GET_CLASS(last_exit_reason.cpu);
         cc->set_pc(last_exit_reason.cpu,
@@ -129,8 +136,11 @@ void libafl_exit_request_timeout(void)
 {
     expected_exit = true;
     last_exit_reason.kind = TIMEOUT;
-    last_exit_reason.cpu = current_cpu;
-
+    if(current_cpu) {
+        last_exit_reason.cpu = current_cpu;
+    } else {
+        //warn_report("libafl_exit_request_timeout called without current_cpu");
+    }
     qemu_system_debug_request();
 }
 #endif
