@@ -1,12 +1,14 @@
 
 #include "qemu/osdep.h"
 
-#include "qapi/error.h"
+#include "qemu/error-report.h"
 #include "qobject/qdict.h"
 #include "qemu/option.h"
 #include "qemu/main-loop.h"
 #include "block/qdict.h"
 #include "libafl/system.h"
+#include "monitor/monitor.h"
+#include "system/block-backend.h"
 
 
 
@@ -37,4 +39,38 @@ int libafl_blk_write(BlockBackend *blk, void *buf, int64_t offset, int64_t sz)
 	g_free(pattern_buf);
 	qemu_iovec_destroy(&qiov);
     return async_ret;
+}
+
+void hmp_libafl_blk_write(Monitor *mon, const QDict *qdict)
+{
+    const char *device = qdict_get_str(qdict, "device");
+    const char *file = qdict_get_str(qdict, "file");
+    BlockBackend *blk;
+    char *buf;
+    uint64_t size;
+    GError *gerr = NULL;
+
+    blk = blk_by_name(device);
+    if (!blk) {
+        error_report("Could not find block device '%s'", device);
+        return;
+    }
+
+    if (!g_file_get_contents(file, &buf, (gsize *)&size, &gerr)) {
+        if (gerr) {
+            error_report("%s", gerr->message);
+            g_error_free(gerr);
+        } else {
+            error_report("Failed to read file '%s'", file);
+        }
+        return;
+    }
+
+    int ret = libafl_blk_write(blk, buf, 0, size);
+    g_free(buf);
+
+    if (ret != 0) {
+        error_report("Failed to write %lu bytes to block device '%s': %d",
+                     size, device, ret);
+    }
 }

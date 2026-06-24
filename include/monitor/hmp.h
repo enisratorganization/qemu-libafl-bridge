@@ -185,4 +185,6 @@ void hmp_syx_snapshot_init(Monitor *mon, const QDict *qdict);
 void hmp_syx_snapshot_increment_push(Monitor *mon, const QDict *qdict);
 void hmp_syx_snapshot_increment_pop(Monitor *mon, const QDict *qdict);
 
+void hmp_libafl_blk_write(Monitor *mon, const QDict *qdict);
+
 #endif

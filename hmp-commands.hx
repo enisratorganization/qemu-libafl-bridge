@@ -1929,6 +1929,19 @@ SRST
   Pop syx.
 ERST
 
+    {
+        .name       = "libafl-blk-write",
+        .args_type  = "device:B,file:s",
+        .params     = "device file",
+        .help       = "Write contents of file to block device at offset 0",
+        .cmd        = hmp_libafl_blk_write,
+    },
+
+SRST
+``libafl-blk-write`` *device* *file*
+  Write the contents of *file* to the block device *device* at offset 0.
+ERST
+
 /**
 * Commands for coverage recording
 */
