@@ -39,7 +39,7 @@ typedef struct SyxSnapshotRAMBlock {
  * handle snapshotting.
  */
 typedef struct SyxSnapshot {
-    SyxCowCache* bdrvs_cow_cache;
+    SyxCowCache* bdrv_cow_cache;
     size_t inc; // how many incremental snapshots above root do we have?
     DeviceSaveState dss[SYX_SNAPSHOT_MAX_INCREMENTAL_DEPTH];
 } SyxSnapshot;
@@ -60,11 +60,7 @@ typedef struct SyxSnapshotState {
     uint64_t page_mask;
 
     SyxSnapshot *thesnap; //@TODO: there is only one...
-    // In use iif syx is initialized with cached_bdrvs flag on.
-    // It is not updated anymore when an active bdrv cache snapshto is set.
-    SyxCowCache* before_fuzz_cache;
-    // snapshot used to restore bdrv cache if enabled.
-    SyxSnapshot* active_bdrv_cache_snapshot;
+    SyxCowCache* bdrv_cow_cache;
 
     // Root
 } SyxSnapshotState;

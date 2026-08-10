@@ -51,8 +51,8 @@ void syx_snapshot_init(bool cached_bdrvs)
     syx_snapshot_state.page_mask = ((uint64_t)-1) << __builtin_ctz(page_size);
 
     if (cached_bdrvs) {
-        syx_snapshot_state.before_fuzz_cache = syx_cow_cache_new();
-        syx_cow_cache_push_layer(syx_snapshot_state.before_fuzz_cache,
+        syx_snapshot_state.bdrv_cow_cache = syx_cow_cache_new();
+        syx_cow_cache_push_layer(syx_snapshot_state.bdrv_cow_cache,
                                  SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE,
                                  SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS);
     }
@@ -66,19 +66,17 @@ SyxSnapshot* syx_snapshot_new(bool track, bool is_active_bdrv_cache,
     SyxSnapshot* snapshot = syx_snapshot_root_new(kind, devices);
    
     if (is_active_bdrv_cache) {
-        // we have cached writes from BEFORE fuzzing starts
-        snapshot->bdrvs_cow_cache = syx_snapshot_state.before_fuzz_cache;
-        syx_snapshot_state.before_fuzz_cache = NULL;
+        // no new layer --> writes up to this point will be DISCARDED on snashot restore!
     } else {
-        snapshot->bdrvs_cow_cache = syx_cow_cache_new();
+        syx_cow_cache_push_layer(syx_snapshot_state.bdrv_cow_cache,
+                            SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE,
+                            SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS);
     }
-    syx_cow_cache_push_layer(snapshot->bdrvs_cow_cache,
-        SYX_SNAPSHOT_COW_CACHE_DEFAULT_CHUNK_SIZE,
-        SYX_SNAPSHOT_COW_CACHE_DEFAULT_MAX_BLOCKS);
-    syx_snapshot_state.active_bdrv_cache_snapshot = snapshot;
 
     if (track) {
         syx_snapshot_state.thesnap = snapshot;
+        syx_snapshot_state.thesnap->bdrv_cow_cache = syx_snapshot_state.bdrv_cow_cache;
+        
         //make sure to catch all new writes
         //with a filled TLB there might be missed writes
         tlb_flush_all_cpus();
@@ -405,7 +403,7 @@ void syx_snapshot_root_restore(SyxSnapshot* snapshot)
 
     tlb_flush_all_cpus();
 
-    syx_cow_cache_flush_highest_layer(snapshot->bdrvs_cow_cache);
+    syx_cow_cache_flush_highest_layer(snapshot->bdrv_cow_cache);
 
     if (mr_to_enable) {
         memory_region_set_enabled(mr_to_enable, true);
@@ -419,20 +417,12 @@ bool syx_snapshot_cow_cache_read_entry(BlockBackend* blk, int64_t offset,
                                        size_t qiov_offset,
                                        BdrvRequestFlags flags)
 {
-    if (!syx_snapshot_state.active_bdrv_cache_snapshot) {
-        if (syx_snapshot_state.before_fuzz_cache) {
-            syx_cow_cache_read_entry(syx_snapshot_state.before_fuzz_cache, blk,
+    if (syx_snapshot_state.bdrv_cow_cache) {
+            syx_cow_cache_read_entry(syx_snapshot_state.bdrv_cow_cache, blk,
                                      offset, bytes, qiov, qiov_offset, flags);
             return true;
-        }
-
-        return false;
-    } else {
-        syx_cow_cache_read_entry(
-            syx_snapshot_state.active_bdrv_cache_snapshot->bdrvs_cow_cache, blk,
-            offset, bytes, qiov, qiov_offset, flags);
-        return true;
     }
+    return false;
 }
 
 bool syx_snapshot_cow_cache_write_entry(BlockBackend* blk, int64_t offset,
@@ -440,21 +430,14 @@ bool syx_snapshot_cow_cache_write_entry(BlockBackend* blk, int64_t offset,
                                         size_t qiov_offset,
                                         BdrvRequestFlags flags)
 {
-    if (!syx_snapshot_state.active_bdrv_cache_snapshot) {
-        if (syx_snapshot_state.before_fuzz_cache) {
-            assert(syx_cow_cache_write_entry(
-                syx_snapshot_state.before_fuzz_cache, blk, offset, bytes, qiov,
-                qiov_offset, flags));
-            return true;
-        }
-
-        return false;
-    } else {
+    if (syx_snapshot_state.bdrv_cow_cache) {
         assert(syx_cow_cache_write_entry(
-            syx_snapshot_state.active_bdrv_cache_snapshot->bdrvs_cow_cache, blk,
-            offset, bytes, qiov, qiov_offset, flags));
+            syx_snapshot_state.bdrv_cow_cache, blk, offset, bytes, qiov,
+            qiov_offset, flags));
         return true;
     }
+
+    return false;
 }
 
 
