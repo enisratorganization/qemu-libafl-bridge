@@ -4298,6 +4298,16 @@ foreach target : target_dirs
         'dependencies': [sdl]
       }]
     endif
+    # EDGE COVERAGE: single-instruction edge coverage front-end
+    if target_name == 'aarch64'
+      execs += [{
+        'name': 'qemu-edge-coverage-' + target_name,
+        'win_subsystem': 'console',
+        'sources': files('system/edge-coverage.c'),
+        'dependencies': []
+      }]
+    endif
+
     if get_option('fuzzing')
       specific_fuzz = specific_fuzz_ss.apply(config_target, strict: false)
       execs += [{
@@ -4327,6 +4337,7 @@ foreach target : target_dirs
     emulator = executable(exe_name, exe['sources'],
                install: true,
                c_args: c_args,
+               include_directories: target_inc,
                dependencies: arch_deps + exe['dependencies'],
                objects: lib.extract_all_objects(recursive: true),
                link_depends: [block_syms, qemu_syms],
