@@ -16,7 +16,7 @@
 #include "qemu/log.h"
 
 
-static void retN(CPUState *cs, vaddr pc, void *opaque)
+static bool retN(CPUState *cs, vaddr pc, void *opaque)
 {
     qemu_log_mask(LOG_TRACE, "HIT instrument @%llx cpu %d %llx\n", pc, cs->cpu_index, opaque);
     ARMCPU *cpu = ARM_CPU(cs);
@@ -26,7 +26,7 @@ static void retN(CPUState *cs, vaddr pc, void *opaque)
 }
 
 // Helper function to set X0 to 0
-static void setX0_0(CPUState *cs, vaddr pc, void *opaque)
+static bool setX0_0(CPUState *cs, vaddr pc, void *opaque)
 {
     ARMCPU *cpu = ARM_CPU(cs);
     cpu->env.xregs[0] = 0;
@@ -34,7 +34,7 @@ static void setX0_0(CPUState *cs, vaddr pc, void *opaque)
 }
 
 // SPSR for N-EL1 (our custom code)
-static void set_SPSR(CPUState *cs, vaddr pc, void *opaque)
+static bool set_SPSR(CPUState *cs, vaddr pc, void *opaque)
 {
     ARMCPU *cpu = ARM_CPU(cs);
     cpu->env.xregs[0] = 0b111000100; //Set ERET to AAARCH64 EL1t !
@@ -42,7 +42,7 @@ static void set_SPSR(CPUState *cs, vaddr pc, void *opaque)
 }
 
 // sets the console handlers
-static void set_console(CPUState *cs, vaddr pc, void *opaque)
+static bool set_console(CPUState *cs, vaddr pc, void *opaque)
 {
     ARMCPU *cpu = ARM_CPU(cs);
     cpu->env.xregs[0] = 0;
@@ -52,7 +52,7 @@ static void set_console(CPUState *cs, vaddr pc, void *opaque)
 }
 
 // ATF wants to disable UART_BASE, we do not allow it...
-static void set_uart_base(CPUState *cs, vaddr pc, void *opaque)
+static bool set_uart_base(CPUState *cs, vaddr pc, void *opaque)
 {
     ARMCPU *cpu = ARM_CPU(cs);
     cpu->env.pc = cpu->env.pc+4;

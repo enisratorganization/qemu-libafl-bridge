@@ -65,7 +65,7 @@ static DeviceState * create_gicv3(int num_irqs, hwaddr dist, hwaddr redist)
     qdev_prop_set_array(gic, "redist-region-count", redist_region_count);
 
     object_property_set_link(OBJECT(gic), "sysmem",
-                             get_system_memory(), &error_fatal);
+                             (Object*)get_system_memory(), &error_fatal);
     qdev_prop_set_bit(gic, "has-lpi", true);
 
     gicbusdev = SYS_BUS_DEVICE(gic);
@@ -143,11 +143,11 @@ static void mt6768_init(MachineState * machine)
     for (int n = 0; n < smp_cpus; n++)
     {
         Object *cpuobj = object_new(machine->cpu_type);
-        object_property_add_child(machine, "cpu[*]", cpuobj);
+        object_property_add_child((Object*)machine, "cpu[*]", cpuobj);
         object_property_set_int(cpuobj, "cntfrq", 1000000000, &error_fatal);
-        qdev_prop_set_bit(cpuobj, "start-powered-off", n > 0);
+        qdev_prop_set_bit((DeviceState*)cpuobj, "start-powered-off", n > 0);
         //qdev_prop_set_uint64(cpuobj, "mp_affinity", )
-        qdev_realize(cpuobj, NULL, &error_fatal);
+        qdev_realize((DeviceState*)cpuobj, NULL, &error_fatal);
         object_unref(cpuobj);
     }
 
@@ -159,13 +159,13 @@ static void mt6768_init(MachineState * machine)
     sysbus_create_varargs("mtk_mcucfg", 0xC530000, NULL);
     sysbus_create_varargs("mtk_trng", 0x1020f000, NULL);
 
-    o = qdev_new("mtk_uart");
+    o = (Object*)qdev_new("mtk_uart");
     Chardev *chr = qemu_chr_find("uart0");
     if(!chr){
         error_report("chardev with id \"uart0\" not found\n");
         exit(1);
     }
-    qdev_prop_set_chr(o, "prop_chr", chr);
+    qdev_prop_set_chr((DeviceState*)o, "prop_chr", chr);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(o), &error_fatal);
     sysbus_mmio_map(SYS_BUS_DEVICE(o), 0, 0x11002000);
 
@@ -208,16 +208,16 @@ static void mt6768_init(MachineState * machine)
     if (load_image_targphys(fname, 0x4c400000, 0x800000) < 0)  goto ERR_LOAD;
     g_free(fname);
 
-    ARMCPU * cs = qemu_get_cpu(0);
+    ARMCPU * cs = (ARMCPU*)qemu_get_cpu(0);
 
-    cpu_reset(cs);
-    arm_emulate_firmware_reset(cs, 3);
+    cpu_reset((CPUState*)cs);
+    arm_emulate_firmware_reset((CPUState*)cs, 3);
 
-    cpu_set_pc(cs, 0x4CE01000);
+    cpu_set_pc((CPUState*)cs, 0x4CE01000);
     cs->env.xregs[0] = 0x4C080000;
     cs->env.xregs[1] = 0x0;
     arm_rebuild_hflags(&cs->env);
-    init_instrument_htable();
+    //init_instrument_htable();
 
     atf_teei_instrument();
     teei_instrument();

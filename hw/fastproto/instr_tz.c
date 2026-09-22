@@ -117,7 +117,7 @@ static bool tzbsp_hash_init(CPUState *cs, vaddr pc, void *opaque)
     hash_next_update = hashbuf;
     if (hashmode != 3 && hashmode != 4) {
         qemu_log_mask(LOG_TRACE, "%s unknown mode %d\n", __func__, hashmode);
-        return;
+        return true;
     }
     qemu_log_mask(LOG_TRACE, "%s %d\n", __func__, hashmode);
     cpu->env.xregs[0] = 0;
@@ -178,7 +178,7 @@ static bool tzbsp2_hash_init(CPUState *cs, vaddr pc, void *opaque)
     hash_next_update2 = hashbuf2;
     if (hashmode2 != 3) {
         qemu_log_mask(LOG_TRACE, "%s unknown mode %d\n", __func__, hashmode2);
-        return;
+        return true;
     }
     qemu_log_mask(LOG_TRACE, "%s %d\n", __func__, hashmode2);
     cpu->env.xregs[0] = 0;

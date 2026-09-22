@@ -67,7 +67,7 @@ void tcg_gen_rec_edge_i64(TCGv_i64 pc, TCGv_i32 out_edge_id) {
         tcg_gen_ld_i32((TCGv_i32)mask, tcg_env, ((int) offsetof(CPUNegativeOffsetState, coverage_rec.edge_rec.mask) -
                                             (int) sizeof(CPUNegativeOffsetState)));
 
-        tcg_gen_and_i32(hashed, hashed, mask);
+        tcg_gen_and_i32(hashed, hashed, (TCGv_i32)mask);
         tcg_gen_add_mem_idx_i64((TCGv_i64)baseptr, (TCGv_i64)hashed, tcg_constant_i64(1), edge_coverage_record_elem_size, 0);
 
         /*

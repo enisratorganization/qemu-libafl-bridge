@@ -51,7 +51,7 @@ bool hash_init(CPUState *cs, vaddr pc, void *opaque)
     hash_next_update2 = hashbuf2;
     if (hashmode2 != 2 && hashmode2 != 3) {
         qemu_log_mask(LOG_TRACE, "hash_init unknown mode %d\n", hashmode2);
-        return;
+        return true;
     }
     qemu_log_mask(LOG_TRACE, "hash_init %d\n", hashmode2);
     cpu->env.xregs[0] = 0;
@@ -89,7 +89,7 @@ bool hash_finish(CPUState *cs, vaddr pc, void *opaque)
         qemu_log_mask(LOG_TRACE, "hash_finish unknown mode %d\n", hashmode2);
         return true;
     }
-    qcrypto_hash_bytes(qalg, hashbuf2, hash_next_update2 - hashbuf2, &digest, &sz, &error_fatal);
+    qcrypto_hash_bytes(qalg, hashbuf2, hash_next_update2 - hashbuf2, (uint8_t**)&digest, &sz, &error_fatal);
 
     cpu_memory_rw_debug(cs, dst, digest, sz, true);
     qemu_log_mask(LOG_TRACE, "hash_finish len %d\n", sz);
@@ -103,7 +103,7 @@ bool hash_finish(CPUState *cs, vaddr pc, void *opaque)
 void brom_instrument()
 {
     add_instrument(0x302A08, -1, retN, 0); // pbl_hw_init
-    add_instrument(0x30F9E4, -1, retN, 1); // some clk control??
+    add_instrument(0x30F9E4, -1, retN, (void*)1); // some clk control??
     add_instrument(0x303660, -1, patchXBL_SEC_Upper_Bound_func, 0);
     add_instrument(0x302344, -1, fix_PMD_for_Secmon_func, 0);
     

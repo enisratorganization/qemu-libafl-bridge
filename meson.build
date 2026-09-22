@@ -747,6 +747,9 @@ warn_flags = [
   '-Wno-string-plus-int',
   '-Wno-tautological-type-limit-compare',
   '-Wno-typedef-redefinition',
+  '-Wno-error=incompatible-pointer-types',
+  '-Wno-error=implicit-function-declaration',
+  '-Wno-error=int-conversion'
 ]
 
 if host_os != 'darwin'

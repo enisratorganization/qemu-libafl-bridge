@@ -16,7 +16,7 @@ static inline bool comp_coverage_is_enabled(TranslationBlock *tb) {
  * Do a fast hash like CRC32. Used for coverage recording and fuzzing.
  */
 void tcg_gen_fast_hash_i32(TCGv_i32 dst, TCGv_i32 src, TCGv_i32 src2);
-void tcg_gen_fast_hash_i64(TCGv_i32 dst, TCGv_i32 src, TCGv_i64 src2);
+void tcg_gen_fast_hash_i64(TCGv_i32 dst, TCGv_i64 src, TCGv_i64 src2);
 
 /**
  * Record an edge at the current @pc basic block and the id of the outgoing edge.

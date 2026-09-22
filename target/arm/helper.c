@@ -2646,7 +2646,7 @@ void dummy_clock_inc_arm(ARMCPU *cpu){
     BQL_LOCK_GUARD();
     dummy_clock_inc();
     for(int i=0;i<NUM_GTIMERS;i++) {
-        void gt_recalc_timer(cpu, i);
+        gt_recalc_timer(cpu, i);
     }
 }
 #endif

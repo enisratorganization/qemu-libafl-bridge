@@ -74,7 +74,7 @@ static void mtk_uart_mmio1_write (void *opaque, hwaddr addr, uint64_t value, uns
 
     switch (addr) {
     case 0x0:
-        qemu_chr_fe_write_all(&s->prop_chr, &value, 1);
+        qemu_chr_fe_write_all(&s->prop_chr, (uint8_t*)&value, 1);
         break;
     default:
         qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad offset 0x%" HWADDR_PRIx "\n", __func__, addr);

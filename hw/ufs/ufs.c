@@ -1380,7 +1380,7 @@ static inline InterconnectDescriptor interconnect_desc(void)
     return desc;
 }
 
-static inline ufs_query_configuration(UfsRequest *req) {
+static inline void ufs_query_configuration(UfsRequest *req) {
     /*
         //Device Desc:
     typedef struct {
