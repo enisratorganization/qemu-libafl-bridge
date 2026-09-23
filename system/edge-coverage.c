@@ -335,14 +335,15 @@ static void dump_hitmap(CPUState *cs)
     const void *map = cs->neg.coverage_rec.edge_rec.rec_buf_hitmap;
     size_t elems = edge_coverage_record_elems;
     size_t esz = edge_coverage_record_elem_size;
-    size_t hits = 0;
     size_t i;
+    bool first = true;
 
     if (!map) {
         fatal("no edge coverage hitmap allocated "
               "(check the -covrec options)");
     }
 
+    printf("{\"edges\":[");
     for (i = 0; i < elems; i++) {
         uint64_t v;
 
@@ -358,13 +359,14 @@ static void dump_hitmap(CPUState *cs)
             break;
         }
         if (v) {
-            printf("hitmap[%zu] = %" PRIu64 "\n", i, v);
-            hits++;
+            if (!first) {
+                printf(",");
+            }
+            printf("%zu", i);
+            first = false;
         }
     }
-    if (!hits) {
-        printf("no hits\n");
-    }
+    printf("]}\n");
     fflush(stdout);
 }
 
