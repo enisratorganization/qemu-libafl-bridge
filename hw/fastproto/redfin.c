@@ -245,7 +245,7 @@ static void redfin_init(MachineState * machine)
 
     cpu_set_pc(cs, 0x300000);
     arm_rebuild_hflags(&cs->env);
-    init_instrument_htable();
+    //init_instrument_htable();
 
     brom_instrument();
     xbl_sec_instrument();

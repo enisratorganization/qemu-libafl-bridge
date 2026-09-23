@@ -165,16 +165,33 @@ def load_hitmap(path, key, edge_elems):
                     return r
         return None
 
-    with open(path) as fh:
-        lst = find_key(json.load(fh))
-    if lst is None:
-        raise SystemExit("no list (>10 ints) found under key %s in %s" % (key, path))
-    bad = [x for x in lst if not 0 <= x < edge_elems]
+    log.info("loading hitmap from %s", path)
+    all_edges = []    # all edge ids collected
+    if os.path.isdir(path):
+        # walk all .metadata files
+        def walk(path):
+            for f in os.listdir(path):
+                if f.endswith(".metadata"):
+                    yield os.path.join(path, f)
+        for fname in walk(path):
+            with open(fname) as fh:
+               lst = find_key(json.load(fh))
+            if lst is None:
+                raise SystemExit("no list (>10 ints) found under key %s in %s" % (key, fname))
+            all_edges += lst
+    else:
+        with open(path) as fh:
+            lst = find_key(json.load(fh))
+        if lst is None:
+            raise SystemExit("no list (>10 ints) found under key %s in %s" % (key, path))
+        all_edges += lst
+    bad = [x for x in all_edges if not 0 <= x < edge_elems]
     if bad:
         log.warning("%d hitmap offsets outside [0, %d): %s", len(bad), edge_elems, bad[:10])
     log.info("hitmap: %d offsets under key %s... (fill %.2f%% of %d)",
-             len(lst), key[:10], 100.0 * len(set(lst)) / edge_elems, edge_elems)
-    return set(lst)
+            len(all_edges), key[:10], 100.0 * len(set(all_edges)) / edge_elems, edge_elems)
+
+    return set(all_edges)
 
 
 def covrec(args):
@@ -464,7 +481,7 @@ def parse_args():
     auto_int = lambda s: int(s, 0)
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--program", default=os.environ.get("PROG_PATH", ""), help="program path in project")
-    p.add_argument("--metadata", required=True, help="json containing the hitmap (input)")
+    p.add_argument("--metadata", required=True, help="json containing the hitmap (input) or a folder containing *.metadata files")
     p.add_argument("--hitmap-key", default="304795868863881800668378148837488880366",
                    help="json key under which the hitmap list is found (searched recursively)")
     p.add_argument("--tool", default="./qemu-edge-coverage-aarch64", help="qemu-edge-coverage-aarch64 binary")
