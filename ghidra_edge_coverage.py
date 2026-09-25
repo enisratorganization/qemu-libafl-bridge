@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
 """
-ghidra_edge_coverage.py -- replay a QEMU (aarch64) edge-coverage hitmap in Ghidra.
+Replay a QEMU (aarch64) edge-coverage hitmap in Ghidra.
 
 The modified QEMU hashes (edge_id, pc) of every *conditional* control-flow
 decision (b.cond, cbz/cbnz, tbz/tbnz and the CC consumers csel/ccmp/fcsel/
-fccmp/...) into a probabilistic hitmap.  This script
+fccmp/...) into a probabilistic hitmap.  This script:
   1. stage "compute": walks all code and, for every such instruction, runs
      `qemu-edge-coverage-aarch64` once per possible outcome to learn which
      hitmap offset that outcome produces; outcomes whose offset is in the
-     recorded hitmap become "hit edges" (global HIT_EDGES),
+     recorded hitmap become "hit edges" (global HIT_EDGES);
   2. runs the filter stages (--stages) which may only *remove* edges, i.e.
-     false positives caused by hash collisions,
+     false positives caused by hash collisions;
   3. logs a summary and optionally (--comment) writes pre-comments to the
      edge targets.
 Indirect branches (br/blr, recorded by QEMU with the register value) cannot
 be computed statically and are ignored.
 
-Usage:
-  source env.sh
-  python ghidra_edge_coverage.py --dry-run -v --start 0x5fef0000 --end 0x5fef4000
-  python ghidra_edge_coverage.py --comment
+Usage example:
+  source env.sh # for GHIDRA_PROJECT_DIR GHIDRA_PROJECT_NAME (PROG_PATH);
+  python ghidra_edge_coverage.py --metadata path/to/corpus --comment;
 """
 import argparse
 import json
@@ -153,7 +152,7 @@ def load_hitmap(path, key, edge_elems):
     def find_key(o):
         if isinstance(o, dict):
             for k, v in o.items():
-                r = find_list(v) if str(k) == key else None
+                r = find_list(v) if str(k).startswith(key) else None
                 if r is None:
                     r = find_key(v)
                 if r is not None:
@@ -345,8 +344,8 @@ def stage_compute(fapi, args):
     try:
         with ThreadPoolExecutor(args.jobs) as ex:
             for i, _ in enumerate(ex.map(lambda job: run_tool(args, *job), todo), 1):
-                if i % 2000 == 0:
-                    log.info("  tool runs: %d/%d (%.0fs)", i, len(todo), time.time() - t0)
+                if i % 5000 == 0:
+                    log.debug("  tool runs: %d/%d (%.0fs)", i, len(todo), time.time() - t0)
     finally:
         if todo:
             log.info("  tool runs done in %.1fs", time.time() - t0)
@@ -479,11 +478,11 @@ def summary(stage_counts):
 # --------------------------------------------------------------------------
 def parse_args():
     auto_int = lambda s: int(s, 0)
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("--program", default=os.environ.get("PROG_PATH", ""), help="program path in project")
-    p.add_argument("--metadata", required=True, help="json containing the hitmap (input) or a folder containing *.metadata files")
-    p.add_argument("--hitmap-key", default="304795868863881800668378148837488880366",
-                   help="json key under which the hitmap list is found (searched recursively)")
+    p.add_argument("--metadata", required=True, help="json containing the hitmap or a folder path containing *.metadata json files (usually fuzzer corpus)")
+    p.add_argument("--hitmap-key", default="30479586",
+                   help="json key under which the hitmap list is found (searched recursively, provide any unique prefix)")
     p.add_argument("--tool", default="./qemu-edge-coverage-aarch64", help="qemu-edge-coverage-aarch64 binary")
     p.add_argument("--edge-elem-sz", type=int, default=1, help="covrec edge_elem_sz (as used in the fuzz run)")
     p.add_argument("--edge-elems", type=int, default=65536, help="covrec edge_elems (as used in the fuzz run)")
