@@ -752,6 +752,9 @@ warn_flags = [
   '-Wno-error=int-conversion'
 ]
 
+# for dtc (and others maybe)
+add_global_arguments(['-Wno-error=discarded-qualifiers'], native: false, language: 'c')
+
 if host_os != 'darwin'
   tsa_has_cleanup = cc.compiles('''
     struct __attribute__((capability("mutex"))) mutex {};
@@ -4299,7 +4302,11 @@ foreach target : target_dirs
       }]
     endif
     # EDGE COVERAGE: single-instruction edge coverage front-end
-    if target_name == 'aarch64'
+    # Standalone tool with its own main(); skip it when building as a
+    # shared/static lib for the Rust bridge, since its object would get
+    # folded into the partially-linked archive and clash with the Rust
+    # binary's main().
+    if target_name == 'aarch64' and 'AS_SHARED_LIB' not in config_host and 'AS_STATIC_LIB' not in config_host
       execs += [{
         'name': 'qemu-edge-coverage-' + target_name,
         'win_subsystem': 'console',
@@ -4349,6 +4356,7 @@ foreach target : target_dirs
       emulator = shared_library(exe_name, exe['sources'],
                install: true,
                c_args: c_args,
+               include_directories: target_inc,
                dependencies: arch_deps + exe['dependencies'],
                objects: lib.extract_all_objects(recursive: true),
                link_depends: [block_syms, qemu_syms],
@@ -4357,6 +4365,7 @@ foreach target : target_dirs
     if 'AS_STATIC_LIB' in config_host
       emulator = static_library(exe_name, exe['sources'],
                c_args: c_args,
+               include_directories: target_inc,
                dependencies: arch_deps + exe['dependencies'],
                objects: lib.extract_all_objects(recursive: true))
     endif

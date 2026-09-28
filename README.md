@@ -1,13 +1,9 @@
-# RUN mt6768
+# MODS
 
-Example cmd:
-```
-./qemu-system-aarch64 -machine mt6768 -smp maxcpus=8 -object memory-backend-file,id=config_area,size=4096B,share=off,rom=off,readonly=on,mem-path=CFG  -object memory-backend-file,id=sram2,size=458752B,share=off,rom=off,readonly=on,mem-path=YOUR_PATH/sram2 -chardev file,id=uart0,path=/tmp/qemulog -nographic -covrec edge_elem_sz=1,edge_elems=8192,edge_enable -L ~/git/mtk-microtrust-fuzzer/fuzzer/files/
-```
-```
-ls ~/git/mtk-microtrust-fuzzer/fuzzer/files/
-atags  atf  atf_arg_t  CFG  el1.elf  fiasco_withsyms.elf  lk  mtk_bl_param_t  sram2  tee
-```
+- Includes `hw/fastproto` for fast and efficient prototyping of HW ("firmware re-hosting")
+- Incudes "TCG inline edge coverage recording" 
+  - `./include/exec/coverage.h` etc.
+  - inline mods inside translator, e.g. in `target/arm/tcg/translate-a64.c`
 
 # QEMU LibAFL Bridge
 
