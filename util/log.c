@@ -505,6 +505,11 @@ const QEMULogItem qemu_log_items[] = {
       "include VPU registers in the 'cpu' logging" },
     { LOG_INVALID_MEM, "invalid_mem",
       "log invalid memory accesses" },
+    /* LibAFL fork: hw/fastproto */
+    { LOG_FASTPROTO, "fastproto",
+      "fastproto: log hook hits and prototype messages" },
+    { LOG_FASTPROTO_MMIO, "fastproto_mmio",
+      "fastproto: log MMIO accesses of stub/prototype devices" },
     { 0, NULL, NULL },
 };
 

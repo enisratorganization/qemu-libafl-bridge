@@ -1,175 +1,193 @@
-#include "libafl/instrument.h"
-#include "tcg/tcg.h"
-#include "tcg/tcg-op.h"
-#include "tcg/tcg-temp-internal.h"
-#include "system/runstate.h"
+/*
+ * PC-based instrumentation ("instrument breakpoints").
+ * See include/libafl/instrument.h for the API contract.
+ *
+ * Entries live in a QHT keyed by (pc, cpu_index). Lookups happen under the
+ * RCU read lock held by cpu_exec(), so removed entries are freed via RCU.
+ */
+
+#include "qemu/osdep.h"
+#include "qemu/atomic.h"
+#include "qemu/qht.h"
+#include "qemu/rcu.h"
+#include "qemu/xxhash.h"
 
 #include "cpu.h"
+#include "libafl/instrument.h"
 #include "libafl/cpu.h"
 
-#ifdef CONFIG_USER_ONLY
-#define THREAD_MODIFIER __thread
-#else
-#define THREAD_MODIFIER
-#endif
-
-typedef struct  {
-	vaddr pc;
-	int cpu_index;	/* -1 = matches all vCPU IDs */
-	InstrumentCallback cb;
-	void *opaque;
+typedef struct InstrBreakpoint {
+    struct rcu_head rcu;        /* must be first for g_free_rcu() */
+    vaddr pc;
+    int cpu_index;              /* INSTRUMENT_ALL_CPUS matches every vCPU */
+    InstrumentCallback cb;
+    void *opaque;
     bool enabled;
 } InstrBreakpoint;
 
-struct qht htable = {0};
+static struct qht instr_htable;
 
-#define QHT_PC_HASH(pc) ((uint32_t)(pc>>1))
+/* Set as soon as the translator queried us: from then on TBs may exist. */
+static bool instr_translation_started;
 
-int libafl_qemu_set_instrument(target_ulong pc) { return 1; }
-
-int libafl_qemu_remove_instrument(target_ulong pc)
+static inline uint32_t instr_hash(vaddr pc)
 {
-    remove_instrument(pc, -1);
+    return qemu_xxhash2(pc);
 }
 
-void libafl_qemu_handle_instrument(CPUArchState *env) {
-	CPUState* cpu = env_cpu(env);
-	
-	/** When generating the call to libafl_qemu_handle_instrument_helper, 
-	 * we took care of the following: The call will always be first in a TB. 
-	 * Thus the PC value should be good, and we do not need to restore the CPU state from TB.
-	 */
-	vaddr pc = cpu->cc->get_pc(cpu);
+/* qht compare functions: @obj is the table entry, @userp the search key */
+static bool instr_match_exact(const void *obj, const void *userp)
+{
+    const InstrBreakpoint *a = obj;
+    const InstrBreakpoint *b = userp;
 
-	if( unlikely(call_instrument_cb(cpu, pc)) ) {
-		/* Instrument hook indicates state has changed */
-		cpu_loop_exit(cpu);
-	}
-	/* Otherwise, execution can continue like normal (just like any helper call)*/
+    return a->pc == b->pc && a->cpu_index == b->cpu_index;
 }
 
-static bool pc_is_instrumented(const void *p, const void *d) {
-	const InstrBreakpoint *a = p;
-    const InstrBreakpoint *b = d;
-
-	if( a->pc == b->pc ){
-		if( a->cpu_index == -1 ||  a->cpu_index == b->cpu_index )
-			return true;
-	}
-	return false;
-};
-
-static bool cmp(const void *ap, const void *bp)
+static bool instr_match_pc(const void *obj, const void *userp)
 {
-	const InstrBreakpoint *a = ap;
-    const InstrBreakpoint *b = bp;
+    const InstrBreakpoint *a = obj;
+    const InstrBreakpoint *b = userp;
 
-	if( a->pc == b->pc && a->cpu_index == b->cpu_index){
-		return true;
-	}
-	return false;
-};
+    return a->pc == b->pc;
+}
 
-bool check_instrument(vaddr pc, int cpu_index) {
-	if(htable.map != NULL){
-		InstrBreakpoint desc;
-		desc.pc = pc;
-		desc.cpu_index = cpu_index;
+static InstrBreakpoint *instr_lookup(vaddr pc, int cpu_index)
+{
+    InstrBreakpoint key = { .pc = pc, .cpu_index = cpu_index };
 
-		InstrBreakpoint *b = qht_lookup_custom(&htable, &desc, QHT_PC_HASH(pc), pc_is_instrumented);
-		return b != NULL;
-	} else{
-		return false;
-	}
-};
+    return qht_lookup(&instr_htable, &key, instr_hash(pc));
+}
 
-bool call_instrument_cb(CPUState *cs, vaddr pc) {
-	if(htable.map != NULL){
-		InstrBreakpoint desc;
-		desc.pc = pc;
-		desc.cpu_index = cs->cpu_index;
+/* Make sure already translated code at @pc picks up a new instrument. */
+static void instr_invalidate(vaddr pc)
+{
+    if (qatomic_read(&instr_translation_started) && first_cpu) {
+        /* tb_flush() in system mode; safe from any thread */
+        libafl_breakpoint_invalidate(first_cpu, pc);
+    }
+}
 
-		InstrBreakpoint* b =
-			qht_lookup_custom(&htable, &desc, QHT_PC_HASH(pc), pc_is_instrumented);
+/* ---- Translation time / runtime ---- */
 
-		if (b != NULL && b->enabled) {
-			return b->cb(cs, pc, b->opaque);
-		} else {
-			return false;
-		}
-	} else{
-		return false;
-	};
-};
+bool check_instrument(vaddr pc)
+{
+    /*
+     * Deliberately ignores cpu_index and the enabled state: TBs are shared
+     * between vCPUs and (de)activation must work without re-translation.
+     * Filtering happens at runtime in call_instrument_cb().
+     */
+    InstrBreakpoint key = { .pc = pc };
 
-/** Add a instrumentation "breakpoint" to be compiled into intermediate TCG
- * 	cpu_index = -1 matches all vCPUs
- */
-bool add_instrument(vaddr pc, int cpu_index, InstrumentCallback cb, void *opaque) {
-	InstrBreakpoint *b = malloc(sizeof(InstrBreakpoint));
+    if (unlikely(!qatomic_read(&instr_translation_started))) {
+        qatomic_set(&instr_translation_started, true);
+    }
+    return qht_lookup_custom(&instr_htable, &key, instr_hash(pc),
+                             instr_match_pc) != NULL;
+}
 
-	b->pc = pc;
-	b->cpu_index = cpu_index;
-	b->cb = cb;
-	b->opaque = opaque;
-	b->enabled = true;
+bool call_instrument_cb(CPUState *cs, vaddr pc)
+{
+    /* vCPU-specific entry first, then the wildcard */
+    InstrBreakpoint *b = instr_lookup(pc, cs->cpu_index);
 
-	InstrBreakpoint *existing = NULL;
-
-	if(!qht_insert(&htable, (void *) b, QHT_PC_HASH(pc), &existing)) {
-        existing->enabled = true;
+    if (b == NULL) {
+        b = instr_lookup(pc, INSTRUMENT_ALL_CPUS);
+    }
+    if (b == NULL || !qatomic_read(&b->enabled)) {
         return false;
     }
+    smp_rmb(); /* pairs with smp_wmb() in add_instrument() */
+    return qatomic_read(&b->cb)(cs, pc, qatomic_read(&b->opaque));
+}
+
+void libafl_qemu_handle_instrument(CPUArchState *env)
+{
+    CPUState *cpu = env_cpu(env);
+
+    /*
+     * The helper call is always the first op of its TB, so the PC in env is
+     * up to date and no state restore from the TB is required.
+     */
+    vaddr pc = cpu->cc->get_pc(cpu);
+
+    if (unlikely(call_instrument_cb(cpu, pc))) {
+        /* Callback changed control flow: leave the TB */
+        cpu_loop_exit(cpu);
+    }
+    /* Otherwise continue with the TB, just like after any helper call */
+}
+
+/* ---- Public API ---- */
+
+bool add_instrument(vaddr pc, int cpu_index, InstrumentCallback cb,
+                    void *opaque)
+{
+    InstrBreakpoint *b = g_new0(InstrBreakpoint, 1);
+    InstrBreakpoint *existing = NULL;
+
+    b->pc = pc;
+    b->cpu_index = cpu_index;
+    b->cb = cb;
+    b->opaque = opaque;
+    b->enabled = true;
+
+    if (!qht_insert(&instr_htable, b, instr_hash(pc), (void **)&existing)) {
+        /* Already registered: update in place (TBs already call us) */
+        g_free(b);
+        qatomic_set(&existing->enabled, false);
+        smp_wmb();
+        qatomic_set(&existing->cb, cb);
+        qatomic_set(&existing->opaque, opaque);
+        smp_wmb();
+        qatomic_set(&existing->enabled, true);
+        return false;
+    }
+
+    instr_invalidate(pc);
     return true;
-};
+}
 
-bool remove_instrument(vaddr pc, int cpu_index) {
-	InstrBreakpoint b;
+bool remove_instrument(vaddr pc, int cpu_index)
+{
+    InstrBreakpoint *b = instr_lookup(pc, cpu_index);
 
-	b.pc = pc;
-	b.cpu_index = cpu_index;
-
-	void *ht_elem = qht_lookup(&htable, &b, QHT_PC_HASH(pc));
-	if( ht_elem != NULL ){
-		qht_remove(&htable, ht_elem, QHT_PC_HASH(pc));
-		return true;
-	}
-	return false;
-};
-
-bool deactivate_instrument(vaddr pc, int cpu_index) {
-	InstrBreakpoint b;
-
-	b.pc = pc;
-	b.cpu_index = cpu_index;
-
-	InstrBreakpoint *hit = qht_lookup(&htable, &b, QHT_PC_HASH(pc));
-	if( hit != NULL ){
-		hit->enabled = false;
-		return true;
+    /*
+     * No TB flush needed: stale helper calls simply find no entry.
+     * Free via RCU since a vCPU may be looking at the entry right now.
+     */
+    if (b != NULL && qht_remove(&instr_htable, b, instr_hash(pc))) {
+        g_free_rcu(b, rcu);
+        return true;
     }
-	return false;
-};
+    return false;
+}
 
-bool reactivate_instrument(vaddr pc, int cpu_index) {
-	InstrBreakpoint b;
+static bool instr_set_enabled(vaddr pc, int cpu_index, bool enabled)
+{
+    InstrBreakpoint *b = instr_lookup(pc, cpu_index);
 
-	b.pc = pc;
-	b.cpu_index = cpu_index;
-
-	InstrBreakpoint *hit = qht_lookup(&htable, &b, QHT_PC_HASH(pc));
-	if( hit != NULL ){
-		hit->enabled = true;
-		return true;
+    if (b == NULL) {
+        return false;
     }
-	return false;
-};
+    qatomic_set(&b->enabled, enabled);
+    return true;
+}
 
-__attribute__ ((constructor)) 
-void init_instrument_htable(void) {
-	qht_init(&htable, &cmp, 1<<11, QHT_MODE_AUTO_RESIZE);
-};
+bool deactivate_instrument(vaddr pc, int cpu_index)
+{
+    return instr_set_enabled(pc, cpu_index, false);
+}
+
+bool reactivate_instrument(vaddr pc, int cpu_index)
+{
+    return instr_set_enabled(pc, cpu_index, true);
+}
 
 
 
-
+/* Runs before main(), so instruments can be added from any init code */
+static void __attribute__((constructor)) instrument_init(void)
+{
+    qht_init(&instr_htable, instr_match_exact, 1 << 11, QHT_MODE_AUTO_RESIZE);
+}

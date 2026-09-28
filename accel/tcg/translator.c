@@ -171,6 +171,22 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->plugin_enabled = plugin_enabled;
 
     while (true) {
+        //// --- Begin LibAFL code ---
+
+        /*
+         * INSTRUMENT (see libafl/instrument.h): an instrumented PC must start
+         * its own TB, so the helper runs at TB entry (env PC valid, no state
+         * restore needed). End the current TB *before* emitting anything for
+         * this instruction, otherwise hooks below would be generated twice.
+         */
+        bool libafl_instrumented = check_instrument(db->pc_next);
+        if (libafl_instrumented && db->num_insns > 0) {
+            db->is_jmp = DISAS_TOO_MANY;
+            break;
+        }
+
+        //// --- End LibAFL code ---
+
         *max_insns = ++db->num_insns;
         ops->insn_start(db, cpu);
         db->insn_start = tcg_last_op();
@@ -190,17 +206,12 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
         libafl_gen_cur_pc = db->pc_next;
         libafl_qemu_breakpoint_run(libafl_gen_cur_pc);
 
+        /* INSTRUMENT: first insn of this TB is instrumented -> call helper */
+        if (libafl_instrumented) {
+            gen_helper_libafl_qemu_handle_instrument(tcg_env);
+        }
 
-        /** INSTRUMENT
-         * Make sure the call to our helper is always first in a TB
-         */
-        if( check_instrument(db->pc_next, cpu->cpu_index)) {
-            if( db->pc_next == db->pc_first ){
-                gen_helper_libafl_qemu_handle_instrument(tcg_env);
-            } else {
-                break;
-            }
-        };
+
 
         /**
          * @brief This is BROKEN:
