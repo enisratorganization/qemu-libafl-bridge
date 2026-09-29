@@ -38,6 +38,7 @@ templates/             copy&paste skeletons (never compiled)
 | patch a register before an insn        | `FP_SET_REG(pc, reg, val, "name")`    |
 | arbitrary C at a PC                    | `FP_HOOK(pc, callback, "name")`       |
 | RAM/ROM, images, CPUs, GIC             | `FP_ADD_MEMORY`, `fp_load_firmware`, `fp_create_cpus`, `fp_create_gicv3` |
+| boot media (UFS)                       | `-device ufs` with `permissive-uic`, `config-desc`, `boot-lun` (see `redfin.c`) |
 
 Hooks are built on `include/libafl/instrument.h` (read its header comment).
 

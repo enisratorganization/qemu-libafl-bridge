@@ -148,7 +148,14 @@ bool fp_hash_update(FpHash *h, CPUState *cs, vaddr src, uint64_t len)
         return false;
     }
     g_byte_array_set_size(h->data, used + len);
-    fp_read(cs, src, h->data->data + used, len);
+    if (!fp_read(cs, src, h->data->data + used, len)) {
+        /* don't hash garbage: let the guest run its own implementation */
+        qemu_log_mask(LOG_GUEST_ERROR, "fp_hash_update: cannot read 0x%"
+                      PRIx64 " bytes at 0x%" VADDR_PRIx "\n", len, src);
+        g_byte_array_set_size(h->data, used);
+        h->active = false;
+        return false;
+    }
     return true;
 }
 

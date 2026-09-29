@@ -124,7 +124,10 @@ static const Property devxyz_properties[] = {
     DEFINE_PROP_UINT64("prop_u64", DevxyzState, prop_u64, 0),
 };
 
-/* System reset: registers to their reset values */
+/*
+ * System reset: registers to their reset values.
+ * Install it with device_class_set_legacy_reset() (see below)
+ */
 static void devxyz_reset(DeviceState *dev)
 {
     DevxyzState *s = DEVXYZ(dev);
@@ -157,7 +160,7 @@ static void devxyz_class_init(ObjectClass *klass, void *data)
 
     dc->vmsd = &vmstate_devxyz;
     dc->realize = devxyz_realize;
-    dc->legacy_reset = devxyz_reset;
+    device_class_set_legacy_reset(dc, devxyz_reset);
     device_class_set_props(dc, devxyz_properties);
 }
 

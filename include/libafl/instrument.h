@@ -41,9 +41,11 @@ typedef bool (*InstrumentCallback)(CPUState *cs, vaddr pc, void *opaque);
 
 /*
  * Register (or replace the callback of) an instrument for @pc.
- * Safe to call at any time, also from within a callback. If code at @pc may
+ * Can be called at any time, also from within a callback. If code at @pc may
  * already be translated, the TB cache is flushed so the hook takes effect.
  * Returns true if newly added, false if an existing entry was updated.
+ *
+ * When adding from within a callback, prefer `return true` from that callback
  */
 bool add_instrument(vaddr pc, int cpu_index, InstrumentCallback cb,
                     void *opaque);

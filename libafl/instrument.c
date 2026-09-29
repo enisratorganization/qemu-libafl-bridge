@@ -63,7 +63,7 @@ static InstrBreakpoint *instr_lookup(vaddr pc, int cpu_index)
 static void instr_invalidate(vaddr pc)
 {
     if (qatomic_read(&instr_translation_started) && first_cpu) {
-        /* tb_flush() in system mode; safe from any thread */
+        /* @TODO called from first cpu */
         libafl_breakpoint_invalidate(first_cpu, pc);
     }
 }
@@ -132,45 +132,54 @@ bool add_instrument(vaddr pc, int cpu_index, InstrumentCallback cb,
     b->opaque = opaque;
     b->enabled = true;
 
-    if (!qht_insert(&instr_htable, b, instr_hash(pc), (void **)&existing)) {
-        /* Already registered: update in place (TBs already call us) */
-        g_free(b);
-        qatomic_set(&existing->enabled, false);
-        smp_wmb();
-        qatomic_set(&existing->cb, cb);
-        qatomic_set(&existing->opaque, opaque);
-        smp_wmb();
-        qatomic_set(&existing->enabled, true);
-        return false;
+    WITH_RCU_READ_LOCK_GUARD() {
+        if (!qht_insert(&instr_htable, b, instr_hash(pc),
+                        (void **)&existing)) {
+            /* Already registered: update in place (TBs already call us) */
+            g_free(b);
+            qatomic_set(&existing->enabled, false);
+            smp_wmb();
+            qatomic_set(&existing->cb, cb);
+            qatomic_set(&existing->opaque, opaque);
+            smp_wmb();
+            qatomic_set(&existing->enabled, true);
+            return false;
+        }
     }
 
     instr_invalidate(pc);
     return true;
 }
 
+
+
 bool remove_instrument(vaddr pc, int cpu_index)
 {
-    InstrBreakpoint *b = instr_lookup(pc, cpu_index);
+    WITH_RCU_READ_LOCK_GUARD() {
+        InstrBreakpoint *b = instr_lookup(pc, cpu_index);
 
-    /*
-     * No TB flush needed: stale helper calls simply find no entry.
-     * Free via RCU since a vCPU may be looking at the entry right now.
-     */
-    if (b != NULL && qht_remove(&instr_htable, b, instr_hash(pc))) {
-        g_free_rcu(b, rcu);
-        return true;
+        /*
+         * No TB flush needed: stale helper calls simply find no entry.
+         * Free via RCU since a vCPU may be looking at the entry right now.
+         */
+        if (b != NULL && qht_remove(&instr_htable, b, instr_hash(pc))) {
+            g_free_rcu(b, rcu);
+            return true;
+        }
     }
     return false;
 }
 
 static bool instr_set_enabled(vaddr pc, int cpu_index, bool enabled)
 {
-    InstrBreakpoint *b = instr_lookup(pc, cpu_index);
+    WITH_RCU_READ_LOCK_GUARD() {
+        InstrBreakpoint *b = instr_lookup(pc, cpu_index);
 
-    if (b == NULL) {
-        return false;
+        if (b == NULL) {
+            return false;
+        }
+        qatomic_set(&b->enabled, enabled);
     }
-    qatomic_set(&b->enabled, enabled);
     return true;
 }
 

@@ -92,6 +92,16 @@ typedef struct UfsParams {
     bool mcq; /* Multiple Command Queue support */
     uint8_t mcq_qcfgptr; /* MCQ Queue Configuration Pointer in MCQCAP */
     uint8_t mcq_maxq; /* MCQ Maximum number of Queues */
+
+    /*
+     * Firmware re-hosting knobs (hw/fastproto). All default to the upstream
+     * QEMU behaviour; set them from the machine init, e.g.
+     *   dev = qdev_new("ufs");
+     *   qdev_prop_set_bit(dev, "permissive-uic", true);
+     */
+    bool permissive_uic; /* emulate DME_GET/SET, never fail a UIC command */
+    bool config_desc;    /* answer the Configuration Descriptor query */
+    int32_t boot_lun;    /* LUN used as boot LU (B-LUN), -1 = none */
 } UfsParams;
 
 /*
@@ -133,7 +143,9 @@ typedef struct UfsHc {
     UfsLu *lus[UFS_MAX_LUS];
     UfsLu report_wlu;
     UfsLu dev_wlu;
-    UfsLu *boot_wlu;
+    UfsLu boot_wlu;
+    /* LU behind the BOOT well known LUN if params.boot_lun is set */
+    UfsLu *boot_lu;
     UfsLu rpmb_wlu;
     DeviceDescriptor device_desc;
     GeometryDescriptor geometry_desc;

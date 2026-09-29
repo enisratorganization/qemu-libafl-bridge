@@ -66,16 +66,18 @@ static void ramblur_init(Object *obj)
 {
     QcomRamblurState *s = QCOM_PIMEM_RAMBLUR(obj);
 
+    /* The window is larger than the modelled registers: the rest reads 0 */
     memory_region_init_io(&s->mmio, obj, &ramblur_ops, s,
                           TYPE_QCOM_PIMEM_RAMBLUR, 0x8000);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 }
 
-static void ramblur_realize(DeviceState *dev, Error **errp)
+/* Register reset values (0x34: encryption range 0 base/config) */
+static void ramblur_reset(DeviceState *dev)
 {
     QcomRamblurState *s = QCOM_PIMEM_RAMBLUR(dev);
 
-    s->regs[0x30 / 4] = 0;
+    memset(s->regs, 0, sizeof(s->regs));
     s->regs[0x34 / 4] = 0x80C01000;
 }
 
@@ -84,7 +86,8 @@ static void ramblur_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->vmsd = &vmstate_ramblur;
-    dc->realize = ramblur_realize;
+    /* NOT dc->legacy_reset = ...: that would never be called */
+    device_class_set_legacy_reset(dc, ramblur_reset);
 }
 
 static const TypeInfo ramblur_info = {

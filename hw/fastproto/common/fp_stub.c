@@ -44,6 +44,7 @@ static const FpReg *fp_stub_find(FpStubState *s, hwaddr off)
     return NULL;
 }
 
+
 static uint64_t fp_stub_read(void *opaque, hwaddr off, unsigned size)
 {
     FpStubState *s = opaque;
@@ -51,6 +52,7 @@ static uint64_t fp_stub_read(void *opaque, hwaddr off, unsigned size)
     uint64_t val = 0;
 
     if (s->ram_mode) {
+        assert(off + size <= s->ram_size);
         val = (r && r->fixed) ? r->val : ldn_le_p(s->ram + off, size);
     } else if (r) {
         val = r->val;
@@ -74,10 +76,14 @@ static void fp_stub_write(void *opaque, hwaddr off, uint64_t val,
         fp_log_mmio(s->name, true, off, size, val);
     }
     if (s->ram_mode && !(r && r->fixed)) {
+        assert(off + size <= s->ram_size);
         stn_le_p(s->ram + off, size, val);
     }
 }
 
+/*
+ * Reset values of the RAM mode store. Must be installed with device_class_set_legacy_reset() 
+ */
 static void fp_stub_reset(DeviceState *dev)
 {
     FpStubState *s = FP_STUB_DEV(dev);
@@ -88,6 +94,7 @@ static void fp_stub_reset(DeviceState *dev)
     memset(s->ram, 0, s->ram_size);
     for (size_t i = 0; i < s->nregs; i++) {
         const FpReg *r = &s->regs[i];
+        /* a value that needs more than 32 bits is stored as 64 bit */
         if (r->val > UINT32_MAX && r->off + 8 <= s->ram_size) {
             stq_le_p(s->ram + r->off, r->val);
         } else if (r->off + 4 <= s->ram_size) {
@@ -157,7 +164,7 @@ static void fp_stub_class_init(ObjectClass *klass, void *data)
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = fp_stub_realize;
-    dc->legacy_reset = fp_stub_reset;
+    device_class_set_legacy_reset(dc, fp_stub_reset);
     dc->vmsd = &vmstate_fp_stub;
     device_class_set_props(dc, fp_stub_properties);
 }

@@ -108,6 +108,7 @@ typedef struct FpGicConfig {
     /*
      * INTIDs for the CPU generic timers, indexed by GTIMER_PHYS, _VIRT,
      * _HYP, _SEC, _HYPVIRT. NULL: Arm BSA defaults (see hw/arm/bsa.h).
+     * If given, the array must have all 5 entries (see redfin.c).
      */
     const int *timer_intids;
     /*

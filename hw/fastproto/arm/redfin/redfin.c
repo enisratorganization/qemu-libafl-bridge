@@ -1,8 +1,13 @@
 /*
- * Redfin (Pixel 4a 5G / 5) machine: boots the Qualcomm boot ROM (PBL) and
+ * Redfin (Smartphone Pixel 5) machine: boots the Qualcomm boot ROM (PBL) and
  * the following boot stages from (virtual) UFS, without any real drivers.
  *
- * See build_redfin/run_example.sh for the command line.
+ * Run example (real images are not in this repo):
+ * /qemu-system-aarch64 -machine redfin -smp maxcpus=8 -bios images/pbl_sdm865.bin \
+ *   -drive file=images/bootlun.bin,if=none,id=dr7,readonly=on -device ufs-lu,drive=dr7,bus=ufs-bus,lun=7 \
+ *   -drive file=images/sde,if=none,id=dr0,readonly=on -device ufs-lu,drive=dr0,bus=ufs-bus,lun=0 \
+ *   -drive file=images/sda,if=none,id=dr1,readonly=on -device ufs-lu,drive=dr1,bus=ufs-bus,lun=1 \
+ *   -chardev file,id=qup,path=qup_serial_out.txt
  */
 
 #include "redfin.h"
@@ -124,8 +129,19 @@ static void redfin_init(MachineState *machine)
         .legacy_redfin_layout = true,   /* FIXME: see FpGicConfig */
     });
 
-    /* QEMU's UFS host controller; LUNs are added with -device ufs-lu */
-    sysbus_create_simple("ufs", 0x1d84000, NULL);
+    /*
+     * QEMU's UFS host controller (LUNs are added with -device ufs-lu).
+     * The boot ROM needs three non-upstream bits (see hw/ufs/ufs.h):
+     *  - permissive-uic: it brings the UniPro link up attribute by attribute
+     *  - config-desc:    it reads the Configuration Descriptor
+     *  - boot-lun=7:     LUN 7 (bootlun.bin) is the boot LU it loads XBL from
+     */
+    dev = qdev_new("ufs");
+    qdev_prop_set_bit(dev, "permissive-uic", true);
+    qdev_prop_set_bit(dev, "config-desc", true);
+    qdev_prop_set_int32(dev, "boot-lun", 7);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, 0x1d84000);
 
     redfin_create_stubs();
 

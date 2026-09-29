@@ -41,6 +41,14 @@
 #define UFS_TOO_HIGH_TEMP_BOUNDARY 160
 #define UFS_TOO_LOW_TEMP_BOUNDARY 60
 
+/*
+ * MIB attribute selectors for DME_GET/DME_SET (UCMDARG1: attribute ID in the
+ * upper 16 bits, GenSelectorIndex in the lower ones). Only needed with
+ * "permissive-uic", see ufs_process_uiccmd().
+ */
+#define UFS_MIB_TX_FSM_STATE 0x00410000 /* TX_FSM_State */
+#define UFS_MIB_PA_PWRMODE 0x15710000   /* PA_PWRMode */
+
 static void ufs_exec_req(UfsRequest *req);
 static void ufs_clear_req(UfsRequest *req);
 
@@ -100,8 +108,8 @@ static MemTxResult ufs_addr_read(UfsHc *u, hwaddr addr, void *buf, int size)
         return MEMTX_DECODE_ERROR;
     }
 
-    return dma_memory_read(&address_space_memory, addr, buf, size, MEMTXATTRS_UNSPECIFIED);
-    //return pci_dma_read(PCI_DEVICE(u), addr, buf, size);
+    return dma_memory_read(&address_space_memory, addr, buf, size,
+                           MEMTXATTRS_UNSPECIFIED);
 }
 
 static MemTxResult ufs_addr_write(UfsHc *u, hwaddr addr, const void *buf,
@@ -116,8 +124,8 @@ static MemTxResult ufs_addr_write(UfsHc *u, hwaddr addr, const void *buf,
         return MEMTX_DECODE_ERROR;
     }
 
-    return dma_memory_write(&address_space_memory, addr, buf, size, MEMTXATTRS_UNSPECIFIED);
-    //return pci_dma_write(PCI_DEVICE(u), addr, buf, size);
+    return dma_memory_write(&address_space_memory, addr, buf, size,
+                            MEMTXATTRS_UNSPECIFIED);
 }
 
 static inline hwaddr ufs_get_utrd_addr(UfsHc *u, uint32_t slot)
@@ -222,8 +230,8 @@ static MemTxResult ufs_dma_read_prdt(UfsRequest *req)
     }
 
     req->sg = g_malloc0(sizeof(QEMUSGList));
+
     qemu_sglist_init(req->sg, DEVICE(u), prdt_len, &address_space_memory);
-    //pci_dma_sglist_init(req->sg, PCI_DEVICE(u), prdt_len);
     req->data_len = 0;
 
     for (uint16_t i = 0; i < prdt_len; ++i) {
@@ -315,16 +323,15 @@ static MemTxResult ufs_dma_write_upiu(UfsRequest *req)
     return ufs_dma_write_utrd(req);
 }
 
+
 static void ufs_irq_check(UfsHc *u)
 {
-    DeviceState *pci = DEVICE(u);
-
     if ((u->reg.is & UFS_INTR_MASK) & u->reg.ie) {
         trace_ufs_irq_raise();
-        //pci_irq_assert(pci);
+        qemu_set_irq(u->irq, 1);
     } else {
         trace_ufs_irq_lower();
-        //pci_irq_deassert(pci);
+        qemu_set_irq(u->irq, 0);
     }
 }
 
@@ -389,31 +396,40 @@ static void ufs_process_uiccmd(UfsHc *u, uint32_t val)
         u->reg.hcs = FIELD_DP32(u->reg.hcs, HCS, UPMCRS, UFS_PWR_LOCAL);
         u->reg.ucmdarg2 = UFS_UIC_CMD_RESULT_SUCCESS;
         break;
+
     case UFS_UIC_CMD_DME_GET:
-        switch (u->reg.ucmdarg1) {
-            case 0x410000:
-                //TX_FSM_State
-                u->reg.ucmdarg3 = 1;
-                break;
-            default:
-                break;
+        if (!u->params.permissive_uic) {
+            u->reg.ucmdarg2 = UFS_UIC_CMD_RESULT_FAILURE;
+            break;
         }
-        
+        switch (u->reg.ucmdarg1) {
+        case UFS_MIB_TX_FSM_STATE:
+            u->reg.ucmdarg3 = 1;    /* TX_FSM state: ready */
+            break;
+        default:
+            break;                  /* unknown attribute: read as 0 */
+        }
         u->reg.ucmdarg2 = UFS_UIC_CMD_RESULT_SUCCESS;
         break;
     case UFS_UIC_CMD_DME_SET:
-        switch (u->reg.ucmdarg1) {
-            case 0x15710000: //PA_PWRMode
-                u->reg.is = FIELD_DP32(u->reg.is, IS, UPMS, 1);
-                break;
-            default:
-                break;
+        if (!u->params.permissive_uic) {
+            u->reg.ucmdarg2 = UFS_UIC_CMD_RESULT_FAILURE;
+            break;
         }
-        
+        switch (u->reg.ucmdarg1) {
+        case UFS_MIB_PA_PWRMODE:
+            /* power mode change requested: report it as completed */
+            u->reg.is = FIELD_DP32(u->reg.is, IS, UPMS, 1);
+            break;
+        default:
+            break;
+        }
         u->reg.ucmdarg2 = UFS_UIC_CMD_RESULT_SUCCESS;
         break;
     default:
-        u->reg.ucmdarg2 = UFS_UIC_CMD_RESULT_SUCCESS;
+        u->reg.ucmdarg2 = u->params.permissive_uic ?
+                          UFS_UIC_CMD_RESULT_SUCCESS :
+                          UFS_UIC_CMD_RESULT_FAILURE;
     }
 
     u->reg.is = FIELD_DP32(u->reg.is, IS, UCCS, 1);
@@ -952,7 +968,12 @@ static UfsReqResult ufs_exec_scsi_cmd(UfsRequest *req)
         lu = &u->dev_wlu;
         break;
     case UFS_UPIU_BOOT_WLUN:
-        lu = u->boot_wlu;
+        /*
+         * With "boot-lun" set, the BOOT well known LUN is an alias for that
+         * real LU (the boot ROM reads its images through it). Otherwise fall
+         * back to the emulated well known LU.
+         */
+        lu = u->boot_lu ? u->boot_lu : &u->boot_wlu;
         break;
     case UFS_UPIU_RPMB_WLUN:
         lu = &u->rpmb_wlu;
@@ -961,6 +982,10 @@ static UfsReqResult ufs_exec_scsi_cmd(UfsRequest *req)
         lu = u->lus[lun];
     }
 
+    if (lu == NULL || lu->scsi_op == NULL) {
+        trace_ufs_err_scsi_cmd_invalid_lun(lun);
+        return UFS_REQUEST_FAIL;
+    }
     return lu->scsi_op(lu, req);
 }
 
@@ -1247,10 +1272,9 @@ static QueryRespCode ufs_exec_query_attr(UfsRequest *req, int op)
     uint32_t value;
     QueryRespCode ret;
 
-    qemu_log("ufs_exec_query_attr idn %d op %d\n", idn, op);
+    trace_ufs_exec_query_attr(idn, op);
     ret = ufs_attr_check_idn_valid(idn, op);
     if (ret) {
-        qemu_log("ufs_attr_check_idn_valid!\n");
         return ret;
     }
 
@@ -1380,50 +1404,77 @@ static inline InterconnectDescriptor interconnect_desc(void)
     return desc;
 }
 
-static inline void ufs_query_configuration(UfsRequest *req) {
-    /*
-        //Device Desc:
-    typedef struct {
-        uint8_t        bLength;
-        uint8_t        bDescriptorType;
-        uint8_t        bBootEnable;
-        uint8_t        bDescrAccessEn;
-        uint8_t        bInitPowerMode;
-        uint8_t        bHighPriorityLUN;
-        uint8_t        bSecureRemovalType;
-        uint8_t        bInitActiveICCLevel;
-        uint16_t       wPeriodicRTCUpdate;
-        } ufs_desc_config_device_t;
-        REDFIN: Length 0x16
-    */
-   /*
-   // JESD220B Table 14.8 - Config Unit Desc. Params
-typedef struct {
-   uint8_t        bLUEnable;
-   uint8_t        bBootLunID;
-   uint8_t        bLUWriteProtect;
-   uint8_t        bMemoryType;
-   uint32_t       dNumAllocUnits;
-   uint8_t        bDataReliability;
-   uint8_t        bLogicalBlockSize;
-   uint8_t        bProvisioningType;
-   uint16_t       wContextCapabilities;
-} ufs_desc_config_unit_t;
-    REDFIN: Length 0x1A
-*/
+/*
+ * Configuration Descriptor (JESD220B 14.1.6.3): a 22 byte device header
+ * followed by one 26 byte unit block per LU. Upstream QEMU does not
+ * implement it; enable it with "config-desc" for boot firmware that reads
+ * the descriptor to learn which LUs exist and which one is the boot LU
+ * (Qualcomm PBL/XBL does).
+ *
+ * Deliberately minimal: LU 0 plus the "boot-lun" LU are reported as enabled,
+ * everything else is zero. That is what the redfin boot chain needs; adapt
+ * the fields below (or report all attached LUs) for other firmware.
+ *
+ *   device header             unit block
+ *   0 bLength                 0 bLUEnable
+ *   1 bDescriptorType         1 bBootLunID
+ *   2 bBootEnable             2 bLUWriteProtect
+ *   3 bDescrAccessEn          3 bMemoryType
+ *   4 bInitPowerMode          4 dNumAllocUnits (4 bytes, big endian)
+ *   5 bHighPriorityLUN        8 bDataReliability
+ *   6 bSecureRemovalType      9 bLogicalBlockSize
+ *   7 bInitActiveICCLevel    10 bProvisioningType
+ *   8 wPeriodicRTCUpdate     11 wContextCapabilities
+ */
+#define UFS_CONF_DESC_HEADER_LEN 22
+#define UFS_CONF_DESC_UNIT_LEN 26
+#define UFS_CONF_DESC_UNITS 8
+#define UFS_CONF_DESC_LEN \
+    (UFS_CONF_DESC_HEADER_LEN + UFS_CONF_DESC_UNITS * UFS_CONF_DESC_UNIT_LEN)
 
-    unsigned char conf[230] = {/*dev config desc*/230,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0  
-                                /*unit conf desc 0*/,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                /*unit conf desc 1*/,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                /*unit conf desc 2*/,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                /*unit conf desc 3*/,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                /*unit conf desc 4*/,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                /*unit conf desc 5*/,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                /*unit conf desc 6*/,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                /*unit conf desc 7*/,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0    //BOOT_WLUN
-                                };
+/* offsets in the device header */
+#define UFS_CONF_LENGTH 0
+#define UFS_CONF_TYPE 1
+#define UFS_CONF_BOOT_ENABLE 2
+#define UFS_CONF_DESC_ACCESS_EN 3
+#define UFS_CONF_INIT_POWER_MODE 4
+#define UFS_CONF_HIGH_PRIORITY_LUN 5
+#define UFS_CONF_SECURE_REMOVAL_TYPE 6
+#define UFS_CONF_INIT_ACTIVE_ICC_LEVEL 7
+/* offsets inside a unit block */
+#define UFS_CONF_UNIT_LU_ENABLE 0
+#define UFS_CONF_UNIT_BOOT_LUN_ID 1
 
-    memcpy(&req->rsp_upiu.qr.data, conf, 230 );
+static void ufs_query_configuration(UfsRequest *req)
+{
+    UfsHc *u = req->hc;
+    uint8_t conf[UFS_CONF_DESC_LEN] = { 0 };
+    int boot_lun = u->params.boot_lun;
+
+    QEMU_BUILD_BUG_ON(UFS_CONF_DESC_LEN > UFS_MAX_QUERY_DATA_SIZE);
+
+    conf[UFS_CONF_LENGTH] = UFS_CONF_DESC_LEN;
+    conf[UFS_CONF_TYPE] = UFS_QUERY_DESC_IDN_CONFIGURATION;
+    conf[UFS_CONF_BOOT_ENABLE] = 1;
+    conf[UFS_CONF_DESC_ACCESS_EN] = 1;
+    conf[UFS_CONF_INIT_POWER_MODE] = 1;
+    conf[UFS_CONF_HIGH_PRIORITY_LUN] = 1;
+    conf[UFS_CONF_SECURE_REMOVAL_TYPE] = 1;
+    conf[UFS_CONF_INIT_ACTIVE_ICC_LEVEL] = 1;
+
+#define UFS_CONF_UNIT(n) \
+    (conf + UFS_CONF_DESC_HEADER_LEN + (n) * UFS_CONF_DESC_UNIT_LEN)
+
+    UFS_CONF_UNIT(0)[UFS_CONF_UNIT_LU_ENABLE] = 1;
+    if (boot_lun >= 0 && boot_lun < UFS_CONF_DESC_UNITS) {
+        UFS_CONF_UNIT(boot_lun)[UFS_CONF_UNIT_LU_ENABLE] = 1;
+        UFS_CONF_UNIT(boot_lun)[UFS_CONF_UNIT_BOOT_LUN_ID] = 1; /* B-LUN A */
+    }
+#undef UFS_CONF_UNIT
+
+    memcpy(&req->rsp_upiu.qr.data, conf, sizeof(conf));
+
+
 }
 
 static QueryRespCode ufs_read_desc(UfsRequest *req)
@@ -1435,7 +1486,7 @@ static QueryRespCode ufs_read_desc(UfsRequest *req)
     uint16_t length = be16_to_cpu(req->req_upiu.qr.length);
     InterconnectDescriptor desc;
 
-    qemu_log("ufs_read_desc idn %d length %d\n", idn, length);
+    trace_ufs_read_desc(idn, length);
     if (selector != 0) {
         return UFS_QUERY_RESULT_INVALID_SELECTOR;
     }
@@ -1476,10 +1527,12 @@ static QueryRespCode ufs_read_desc(UfsRequest *req)
         status = UFS_QUERY_RESULT_SUCCESS;
         break;
     case UFS_QUERY_DESC_IDN_CONFIGURATION:
-        ufs_query_configuration(req);
-
-        status = UFS_QUERY_RESULT_SUCCESS;
-        break;   
+        if (u->params.config_desc) {
+            ufs_query_configuration(req);
+            status = UFS_QUERY_RESULT_SUCCESS;
+            break;
+        }
+        /* fall through: not implemented unless explicitly enabled */
     default:
         length = 0;
         trace_ufs_err_query_invalid_idn(req->req_upiu.qr.opcode, idn);
@@ -1558,7 +1611,6 @@ static UfsReqResult ufs_exec_query_cmd(UfsRequest *req)
     QueryRespCode status;
 
     trace_ufs_exec_query_cmd(req->slot, req->req_upiu.qr.opcode);
-    qemu_log("ufs_exec_query_cmd slot %d opcode %d func %d\n", req->slot, req->req_upiu.qr.opcode, query_func);
     if (query_func == UFS_UPIU_QUERY_FUNC_STANDARD_READ_REQUEST) {
         status = ufs_exec_query_read(req);
     } else if (query_func == UFS_UPIU_QUERY_FUNC_STANDARD_WRITE_REQUEST) {
@@ -1570,9 +1622,8 @@ static UfsReqResult ufs_exec_query_cmd(UfsRequest *req)
     data_segment_length = be16_to_cpu(req->rsp_upiu.qr.length);
     ufs_build_upiu_header(req, UFS_UPIU_TRANSACTION_QUERY_RSP, 0, status, 0,
                           data_segment_length);
-    ufs_build_query_response(req);
+    ufs_build_query_response(req);   /* echoes opcode/idn/index/selector */
 
-    req->rsp_upiu.qr.opcode = req->req_upiu.qr.opcode;
     if (status != UFS_QUERY_RESULT_SUCCESS) {
         return UFS_REQUEST_FAIL;
     }
@@ -1731,19 +1782,6 @@ static bool ufs_check_constraints(UfsHc *u, Error **errp)
     return true;
 }
 
-/*static void ufs_init_pci(UfsHc *u, PCIDevice *pci_dev)
-{
-    uint8_t *pci_conf = pci_dev->config;
-
-    pci_conf[PCI_INTERRUPT_PIN] = 1;
-    pci_config_set_prog_interface(pci_conf, 0x1);
-
-    memory_region_init_io(&u->iomem, OBJECT(u), &ufs_mmio_ops, u, "ufs",
-                          u->reg_size);
-    pci_register_bar(pci_dev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &u->iomem);
-    u->irq = pci_allocate_irq(pci_dev);
-}*/
-
 static void ufs_init_state(UfsHc *u)
 {
     u->req_list = g_new0(UfsRequest, u->params.nutrs);
@@ -1869,35 +1907,37 @@ static void ufs_init_hc(UfsHc *u)
     u->temperature = UFS_TEMPERATURE;
 }
 
-static void ufs_realize(DeviceState *pci_dev, Error **errp)
+
+static void ufs_realize(DeviceState *dev, Error **errp)
 {
-    UfsHc *u = UFS(pci_dev);
+    UfsHc *u = UFS(dev);
+    SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
 
     if (!ufs_check_constraints(u, errp)) {
         return;
     }
 
-    qbus_init(&u->bus, sizeof(UfsBus), TYPE_UFS_BUS, DEVICE(pci_dev), "ufs-bus");
+
+    qbus_init(&u->bus, sizeof(UfsBus), TYPE_UFS_BUS, dev, "ufs-bus");
 
     ufs_init_state(u);
     ufs_init_hc(u);
-    //ufs_init_pci(u, pci_dev);
 
     ufs_init_wlu(&u->report_wlu, UFS_UPIU_REPORT_LUNS_WLUN);
     ufs_init_wlu(&u->dev_wlu, UFS_UPIU_UFS_DEVICE_WLUN);
-    //ufs_init_wlu(&u->boot_wlu, UFS_UPIU_BOOT_WLUN);
+    ufs_init_wlu(&u->boot_wlu, UFS_UPIU_BOOT_WLUN);
     ufs_init_wlu(&u->rpmb_wlu, UFS_UPIU_RPMB_WLUN);
 
     memory_region_init_io(&u->iomem, OBJECT(u), &ufs_mmio_ops, u, "ufs",
                           u->reg_size);
-    sysbus_init_mmio(SYS_BUS_DEVICE(pci_dev), &u->iomem);
+    sysbus_init_mmio(sbd, &u->iomem);
+    sysbus_init_irq(sbd, &u->irq);
 }
 
-static void ufs_exit(DeviceState *pci_dev)
-{
-    UfsHc *u = UFS(pci_dev);
 
-    qemu_free_irq(u->irq);
+static void ufs_exit(DeviceState *dev)
+{
+    UfsHc *u = UFS(dev);
 
     qemu_bh_delete(u->doorbell_bh);
     qemu_bh_delete(u->complete_bh);
@@ -1925,6 +1965,14 @@ static const Property ufs_props[] = {
     DEFINE_PROP_UINT8("nutmrs", UfsHc, params.nutmrs, 8),
     DEFINE_PROP_BOOL("mcq", UfsHc, params.mcq, false),
     DEFINE_PROP_UINT8("mcq-maxq", UfsHc, params.mcq_maxq, 2),
+    /*
+     * Firmware re-hosting knobs, all off by default (see UfsParams).
+     * "boot-lun": the LU (0..7) that the BOOT well known LUN and the
+     * Configuration Descriptor report as boot LU; -1 disables it.
+     */
+    DEFINE_PROP_BOOL("permissive-uic", UfsHc, params.permissive_uic, false),
+    DEFINE_PROP_BOOL("config-desc", UfsHc, params.config_desc, false),
+    DEFINE_PROP_INT32("boot-lun", UfsHc, params.boot_lun, -1),
 };
 
 
@@ -1972,14 +2020,8 @@ static const VMStateDescription vmstate_ufs_hc = {
 static void ufs_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
-    //PCIDeviceClass *pc = PCI_DEVICE_CLASS(oc);
 
     dc->realize = ufs_realize;
-    // pc->exit = ufs_exit;
-    // pc->vendor_id = PCI_VENDOR_ID_REDHAT;
-    // pc->device_id = PCI_DEVICE_ID_REDHAT_UFS;
-    // pc->class_id = PCI_CLASS_STORAGE_UFS;
-
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
     dc->desc = "Universal Flash Storage";
     device_class_set_props(dc, ufs_props);

@@ -299,12 +299,18 @@ static bool ufs_add_lu(UfsHc *u, UfsLu *lu, Error **errp)
         return false;
     }
 
-    if( lu->lun == 7 ) { /* BOOT LUN config*/
+    /*
+     * with -device ufs,boot-lun=<n> this LU becomes the boot LU,
+     * i.e. it is reported as such in the descriptors and is used for requests
+     * to the BOOT well known LUN (see ufs_exec_scsi_cmd()). E.g. Boot ROMs load
+     * the next stage through it.
+     */
+    if (u->params.boot_lun >= 0 && lu->lun == u->params.boot_lun) {
         lu->unit_desc.boot_lun_id = 1;
         lu->unit_desc.lu_enable = 1;
         u->device_desc.boot_enable = 1;
         u->attributes.boot_lun_en = 1;
-        u->boot_wlu = lu;
+        u->boot_lu = lu;
     }
     u->lus[lu->lun] = lu;
     u->device_desc.number_lu++;
