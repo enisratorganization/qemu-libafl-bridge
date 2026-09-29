@@ -14,7 +14,8 @@ fastproto.h            common API: logging, hook tables, guest memory,
 common/                arch independent code (fp-stub device, helpers)
 arm/fp_arm.{h,c}       ARM helpers: registers/return, GICv3, CPU start
 arm/redfin/            *example*: Pixel 5 (Qualcomm) boot ROM -> UEFI
-arm/mt6768/            *example*: MediaTek ATF + TEE with initial RAM state (no boot rom)
+arm/mt6768/            *example*: MediaTek ATF + TEE with initial RAM state (no boot
+                       rom); also shows a machine-local CPU subtype (mt6768_cpu.c)
 templates/             copy&paste skeletons (never compiled)
 ```
 
@@ -39,6 +40,7 @@ templates/             copy&paste skeletons (never compiled)
 | arbitrary C at a PC                    | `FP_HOOK(pc, callback, "name")`       |
 | RAM/ROM, images, CPUs, GIC             | `FP_ADD_MEMORY`, `fp_load_firmware`, `fp_create_cpus`, `fp_create_gicv3` |
 | boot media (UFS)                       | `-device ufs` with `permissive-uic`, `config-desc`, `boot-lun` (see `redfin.c`) |
+| board CPU model (MIDR, vendor sysregs) | subtype of an upstream arm-cpu, `define_arm_cp_regs()` (see `arm/mt6768/mt6768_cpu.c`) |
 
 Hooks are built on `include/libafl/instrument.h` (read its header comment).
 

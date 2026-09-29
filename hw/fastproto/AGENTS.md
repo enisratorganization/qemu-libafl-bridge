@@ -17,7 +17,7 @@ comment. `fastproto.h`, `common/`, `arm/`, `templates/` are in
 | `templates/` | `machine_skeleton.c`, `instr_skeleton.c` (hooks), `sysbus_device_skeleton.c`; compile-ready, never built in place |
 | `include/libafl/instrument.h` | PC hook core (`add_instrument`); header comment = contract |
 | `arm/redfin/` | example: Pixel 5 (Qualcomm SDM865) boot ROM → XBL → TZ → UEFI, boot media = UFS |
-| `arm/mt6768/` | example: MediaTek ATF (BL31) + TEE started from preloaded images |
+| `arm/mt6768/` | example: Start with MediaTek ATF (BL31) and RAM state extracted from real HW ; also shows a machine-local CPU subtype |
 
 Where to copy from:
 - `redfin/redfin.c`: memory map, ~20 `FP_STUB`s, GIC with custom timer
@@ -28,9 +28,12 @@ Where to copy from:
   boot-image table. Devices: `qcom_qup.c` (UART), `qcom_mpm2_sleepctr.c`
   (counter per read), `qcom_pimem_ramblur.c` (state + reset).
 - `mt6768/mt6768.c`: start mid-chain (raw images, x0/x1 boot args,
-  `fp_map_memdev`). `instr_atf.c`: SPSR of next stage, keep UART on;
+  `fp_map_memdev` for the preloaded SRAM).
+  `mt6768_cpu.c`: CPU subtype = board-specific MIDR + the
+  implementation-defined sysregs the firmware reads
   `instr_teei.c`: patch a lib loaded at runtime (host-RAM find/replace +
   `tb_flush`), `DUMMY_TIMERS` ticks, debug hooks.
+  `instr_atf.c`: SPSR of next stage, keep UART on
 
 ## 2. Build
 
@@ -169,6 +172,7 @@ Add as needed:
 | Writes a reg, reads it back | `FP_STUB_RAM` |
 | Data abort, FAR unmapped | add RAM/ROM/stub; check region size |
 | Undef insn / unexpected exception at entry | CPU type, start EL, AArch32 vs 64, CPU props (`cntfrq`, `mp-affinity`) |
+| Undef insn encountered, e.g. `mrs`/`msr S3_<op1>_c15_*` (vendor sysreg) | machine-local CPU subtype with `define_arm_cp_regs()` (e.g. `mt6768_cpu.c`) |
 | Stuck in `wfi` / waiting for a tick | GIC + timer INTIDs, `DUMMY_TIMERS`, or hook the wait |
 | PLL/DDR training/PMIC/clock init never ends | `FP_RET(pc, <success>, "name")` on the function |
 | Signature/hash check fails | `FpHash` offload (`instr_brom.c`) or `FP_RET` on verify |

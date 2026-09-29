@@ -66,7 +66,6 @@ static void ramblur_init(Object *obj)
 {
     QcomRamblurState *s = QCOM_PIMEM_RAMBLUR(obj);
 
-    /* The window is larger than the modelled registers: the rest reads 0 */
     memory_region_init_io(&s->mmio, obj, &ramblur_ops, s,
                           TYPE_QCOM_PIMEM_RAMBLUR, 0x8000);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);

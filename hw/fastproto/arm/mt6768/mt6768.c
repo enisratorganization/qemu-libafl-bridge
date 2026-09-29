@@ -1,10 +1,11 @@
 /*
  * MT6768 machine: starts ATF (BL31) at EL3 with preloaded TEE + LK images.
  *
- * Needs: -L <dir> with raw images atf, atf_arg_t, mtk_bl_param_t, atags,
- *        tee, lk; -chardev ...,id=uart0; memory backends sram2, config_area:
- *   -object memory-backend-file,id=sram2,size=...,mem-path=...
- *   -object memory-backend-file,id=config_area,size=...,mem-path=...
+ * See run_example.sh. CPU: MT6768_CPU_TYPE_NAME (mt6768_cpu.c) - the plain
+ * cortex-a55 takes an EL3 undefined instruction in ATF.
+ * 
+ * Run example (real images are not in this repo):
+ * ./qemu-system-aarch64 -machine mt6768 -smp maxcpus=8 -object memory-backend-file,id=config_area,size=4096B,share=off,rom=off,readonly=on,mem-path=images/CFG  -object memory-backend-file,id=sram2,size=458752B,share=off,rom=off,readonly=on,mem-path=images/sram2 -chardev file,id=uart0,path=serial.txt -nographic -L images
  */
 
 #include "mt6768.h"
@@ -12,7 +13,6 @@
 #include "hw/misc/unimp.h"
 #include "chardev/char.h"
 
-#define MT6768_CPU_TYPE "cortex-a55-arm-cpu"
 #define MT6768_ATF_BASE 0x4CE01000
 
 static void mt6768_cpu_setup(Object *cpu, int index, void *opaque)
@@ -94,12 +94,12 @@ static void mt6768_init(MachineState *machine)
 static void mt6768_machine_init(MachineClass *mc)
 {
     static const char *const valid_cpu_types[] = {
-        MT6768_CPU_TYPE,
+        MT6768_CPU_TYPE_NAME,
         NULL
     };
 
     mc->desc = "mt6768";
-    mc->default_cpu_type = MT6768_CPU_TYPE;
+    mc->default_cpu_type = MT6768_CPU_TYPE_NAME;
     mc->valid_cpu_types = valid_cpu_types;
     mc->max_cpus = 8;
     mc->default_ram_size = 3 * GiB;

@@ -7,7 +7,7 @@
  *   -drive file=images/bootlun.bin,if=none,id=dr7,readonly=on -device ufs-lu,drive=dr7,bus=ufs-bus,lun=7 \
  *   -drive file=images/sde,if=none,id=dr0,readonly=on -device ufs-lu,drive=dr0,bus=ufs-bus,lun=0 \
  *   -drive file=images/sda,if=none,id=dr1,readonly=on -device ufs-lu,drive=dr1,bus=ufs-bus,lun=1 \
- *   -chardev file,id=qup,path=qup_serial_out.txt
+ *   -chardev file,id=qup,path=serial.txt
  */
 
 #include "redfin.h"

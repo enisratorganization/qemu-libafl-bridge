@@ -20,7 +20,6 @@ static bool set_UART_flag(CPUState *cs, vaddr pc, void *opaque)
 }
 
 /* ---- Patch the loglevel check in libuTlog.so once it is loaded ---- */
-
 typedef struct FindReplace {
     const uint8_t *find;
     const uint8_t *replace;

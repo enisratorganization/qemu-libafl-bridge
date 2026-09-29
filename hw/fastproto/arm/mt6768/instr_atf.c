@@ -20,7 +20,6 @@ static const FpHook atf_hooks[] = {
     FP_SET_REG(0x4CE030A4, 0, SPSR_EL1T_A64, "EL3 -> LK: set SPSR"),
     FP_SET_REG(0x4CE0B370, 0, SPSR_EL1T_A64, "EL3 -> KERNEL: set SPSR"),
     FP_HOOK(0x4CE190F0, set_console, "set_console"),
-    /* ATF wants to disable UART_BASE, we do not allow it */
     FP_SKIP(0x4CE18B84, "keep UART enabled"),
 };
 
