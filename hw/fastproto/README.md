@@ -13,8 +13,8 @@ fastproto.h            common API: logging, hook tables, guest memory,
                        machine setup, fp-stub, hash offloading
 common/                arch independent code (fp-stub device, helpers)
 arm/fp_arm.{h,c}       ARM helpers: registers/return, GICv3, CPU start
-arm/redfin/            example: Pixel 5 (Qualcomm) boot ROM -> UEFI
-arm/mt6768/            example: MediaTek ATF + TEE
+arm/redfin/            *example*: Pixel 5 (Qualcomm) boot ROM -> UEFI
+arm/mt6768/            *example*: MediaTek ATF + TEE with initial RAM state (no boot rom)
 templates/             copy&paste skeletons (never compiled)
 ```
 
@@ -52,7 +52,4 @@ Hooks are built on `include/libafl/instrument.h` (read its header comment).
 -D file.log           write the log to a file
 ```
 
-## Example
 
-`build_redfin/run_example.sh` boots the redfin firmware up to the UEFI
-QseeComDxe assert (see `arm/redfin/TODO.md`). Use it as end-to-end test.
