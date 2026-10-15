@@ -72,6 +72,7 @@ static QemuMutex vmstop_lock;
 
 //// --- Begin LibAFL code ---
 void libafl_exit_request_internal(CPUState* cpu, uint64_t pc, ShutdownCause cause, int signal);
+bool libafl_exit_asap(void);
 //// --- End LibAFL code ---
 
 typedef struct {
@@ -812,7 +813,15 @@ static bool main_loop_should_exit(int *status)
 
 //// --- Begin LibAFL code ---
 #ifdef AS_LIB
-        return true;    // exit back to fuzzing harness
+        // Only break out of the main loop (back to the LibAFL caller) if the
+        // exit was requested by LibAFL itself (breakpoint, timeout, crash).
+        // Otherwise the stop stems from GDB (breakpoint, watchpoint, step):
+        // keep the main loop running to serve the gdbstub while the VM is
+        // stopped. GDB stops/continues stay transparent to the fuzzer; the
+        // loop eventually exits when LibAFL requests an exit.
+        if (libafl_exit_asap()) {
+            return true;    // exit back to fuzzing harness
+        }
 #endif
 //// --- End LibAFL code ---
 

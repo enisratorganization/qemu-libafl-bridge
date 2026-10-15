@@ -565,6 +565,12 @@ void gdb_handle_query_attached(GArray *params, void *ctx)
 
 void gdb_continue(void)
 {
+    //// --- Begin LibAFL code ---
+    if (libafl_qemu_gdb_hold_continue()) {
+        return;
+    }
+    //// --- End LibAFL code ---
+
     if (!runstate_needs_reset()) {
         trace_gdbstub_op_continue();
         vm_start();
@@ -579,6 +585,12 @@ int gdb_continue_partial(char *newstates)
     CPUState *cpu;
     int res = 0;
     int flag = 0;
+
+    //// --- Begin LibAFL code ---
+    if (libafl_qemu_gdb_hold_continue()) {
+        return res;
+    }
+    //// --- End LibAFL code ---
 
     if (!runstate_needs_reset()) {
         bool step_requested = false;
