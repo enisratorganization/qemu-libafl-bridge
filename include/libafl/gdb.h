@@ -24,7 +24,12 @@ bool libafl_qemu_gdb_hold_continue(void);
  * Block the caller (with the BQL held, the VM stopped) while serving the main
  * loop, hence the gdbstub, until an attached GDB client requests a
  * continue/step - or until an exit is requested (e.g. SIGINT).
+ * This call starts the gdbserver (tcp::1234) first, so it must be called only
+ * after the preparation sequence: the socket is not listening before, hence a
+ * client cannot attach early and set breakpoints that would hit during the
+ * preparation sequence. The attaching client learns that the VM is stopped
+ * via the usual '?' handshake; its continue releases the hold.
  * Returns true if the client requested a continue, false if an exit was
- * requested while waiting.
+ * requested while waiting (or the gdbserver could not be started).
  */
 bool libafl_qemu_gdb_wait_for_continue(void);

@@ -5,6 +5,9 @@
 
 #ifndef CONFIG_USER_ONLY
 #include "libafl/exit.h"
+#include "exec/gdbstub.h"
+#include "qapi/error.h"
+#include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "system/runstate.h"
 #endif
@@ -26,12 +29,27 @@ bool libafl_qemu_gdb_hold_continue(void)
 
 bool libafl_qemu_gdb_wait_for_continue(void)
 {
+    Error *err = NULL;
+
     assert(!runstate_is_running());
 
     // The exit request of the last executed breakpoint is stale here (it is
     // only cleared on the next vm_start); clear it so the loop below waits for
     // a real exit request (e.g. SIGINT) instead of returning immediately.
     libafl_exit_signal_vm_start();
+
+    /*
+     * Start the gdbserver only now, i.e. after the preparation sequence:
+     * the socket is not even listening before, so a GDB client cannot
+     * attach early and set breakpoints that would then hit during the
+     * preparation sequence. Clients attaching now learn that the VM is
+     * stopped via the usual '?' handshake; their continue releases the
+     * hold (see libafl_qemu_gdb_hold_continue).
+     */
+    if (!gdbserver_start("tcp::1234", &err)) {
+        error_reportf_err(err, "libafl gdb: could not start the gdbserver: ");
+        return false;
+    }
 
     libafl_gdb_hold = true;
     libafl_gdb_continue_seen = false;
