@@ -18,7 +18,7 @@ be computed statically and are ignored.
 
 Usage example:
   source env.sh # for GHIDRA_PROJECT_DIR GHIDRA_PROJECT_NAME (PROG_PATH);
-  python ghidra_edge_coverage.py --metadata path/to/corpus --comment;
+  python ghidra_edge_coverage.py --metadata path/to/corpus more.metadata --comment;
 """
 import argparse
 import json
@@ -36,7 +36,7 @@ log = logging.getLogger("edgecov")
 # For CC consumers (csel, ccmp, ...) the edge is (pc, pc+4); both outcomes
 # ("enc.cond ne=true" / "...=false") share that key, told apart by the label.
 # --------------------------------------------------------------------------
-HITMAP = set()   # offsets recorded by QEMU (from metadata.json)
+HITMAP = set()   # offsets recorded by QEMU (from xxx.metadata)
 CANDIDATES = {}  # (src, dst) -> {"insn": str, "offsets": {offset: label}}  every computable edge
 HIT_EDGES = {}   # (src, dst) -> {"insn": str, "offsets": {offset: label}}  only offsets in HITMAP
 TOOL_CACHE = {}  # "pc|insn|nzcv|regs" -> [offsets]  results of the qemu tool (optionally persisted)
@@ -138,8 +138,9 @@ def plan_runs(fapi, ins):
 # --------------------------------------------------------------------------
 # Inputs: hitmap and the qemu tool
 # --------------------------------------------------------------------------
-def load_hitmap(path, key, edge_elems):
-    """Find `key` anywhere in the json and take the first list (>10 ints) below it."""
+def load_hitmap(paths, key, edge_elems):
+    """Find `key` anywhere in each json and take the first list (>10 ints) below it.
+    Each path is a .metadata file or a folder whose .metadata files are all loaded."""
     def find_list(o):
         if isinstance(o, list) and len(o) > 10 and all(isinstance(x, int) for x in o):
             return o
@@ -164,33 +165,34 @@ def load_hitmap(path, key, edge_elems):
                     return r
         return None
 
-    log.info("loading hitmap from %s", path)
-    all_edges = []    # all edge ids collected
-    if os.path.isdir(path):
-        # walk all .metadata files
-        def walk(path):
-            for f in os.listdir(path):
-                if f.endswith(".metadata"):
-                    yield os.path.join(path, f)
-        for fname in walk(path):
+    log.info("loading hitmap from %d path(s): %s", len(paths), ", ".join(paths))
+    all_edges = set()  # all edge ids collected
+    num_files = 0
+    for path in paths:
+        if os.path.isdir(path):
+            # walk all json .metadata files in the folder
+            def walk(path):
+                for f in os.listdir(path):
+                    if f.endswith(".metadata"):
+                        yield os.path.join(path, f)
+            fnames = sorted(walk(path))
+        else:
+            fnames = [path]
+        for fname in fnames:
             with open(fname) as fh:
-               lst = find_key(json.load(fh))
+                lst = find_key(json.load(fh))
             if lst is None:
-                raise SystemExit("no list (>10 ints) found under key %s in %s" % (key, fname))
-            all_edges += lst
-    else:
-        with open(path) as fh:
-            lst = find_key(json.load(fh))
-        if lst is None:
-            raise SystemExit("no list (>10 ints) found under key %s in %s" % (key, path))
-        all_edges += lst
-    bad = [x for x in all_edges if not 0 <= x < edge_elems]
+                log.info("no list (>10 ints) found under key %s in %s" % (key, fname))
+                continue
+            all_edges.update(lst)
+            num_files += 1
+    bad = sorted(x for x in all_edges if not 0 <= x < edge_elems)
     if bad:
-        log.warning("%d hitmap offsets outside [0, %d): %s", len(bad), edge_elems, bad[:10])
-    log.info("hitmap: %d offsets under key %s... (fill %.2f%% of %d)",
-            len(all_edges), key[:10], 100.0 * len(set(all_edges)) / edge_elems, edge_elems)
+        log.debug("%d hitmap offsets outside [0, %d): %s", len(bad), edge_elems, bad[:10])
+    log.info("Loaded %d metadata files, total hitmap: %d offsets under key %s... (fill %.2f%% of %d)",
+            num_files, len(all_edges), key[:10], 100.0 * len(all_edges) / edge_elems, edge_elems)
 
-    return set(all_edges)
+    return all_edges
 
 
 def covrec(args):
@@ -480,10 +482,11 @@ def parse_args():
     auto_int = lambda s: int(s, 0)
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("--program", default=os.environ.get("PROG_PATH", ""), help="program path in project")
-    p.add_argument("--metadata", required=True, help="json containing the hitmap or a folder path containing *.metadata json files (usually fuzzer corpus)")
-    p.add_argument("--hitmap-key", default="30479586",
+    p.add_argument("--metadata", required=True, nargs="+",
+                   help="json .metadata files containing the hitmap and/or folders whose *.metadata files are all loaded (usually fuzzer corpus)")
+    p.add_argument("--hitmap-key", default="13034433",
                    help="json key under which the hitmap list is found (searched recursively, provide any unique prefix)")
-    p.add_argument("--tool", default="./qemu-edge-coverage-aarch64", help="qemu-edge-coverage-aarch64 binary")
+    p.add_argument("--tool", default="qemu-edge-coverage-aarch64", help="qemu-edge-coverage-aarch64 binary")
     p.add_argument("--edge-elem-sz", type=int, default=1, help="covrec edge_elem_sz (as used in the fuzz run)")
     p.add_argument("--edge-elems", type=int, default=65536, help="covrec edge_elems (as used in the fuzz run)")
     p.add_argument("--tool-cache", default="", help="persist tool results ('' = off)")
