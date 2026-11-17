@@ -78,7 +78,12 @@ static const TypeInfo mt6768_a55_info = {
 
 static void mt6768_cpu_register_types(void)
 {
+    /* cortex-a55 (and with it this subtype) only exists in the 64-bit
+     * target; registering it in arm-softmmu aborts at startup
+     * ("missing its parent"), e.g. for qemu-edge-coverage-arm. */
+#ifdef TARGET_AARCH64
     type_register_static(&mt6768_a55_info);
+#endif
 }
 
 type_init(mt6768_cpu_register_types)

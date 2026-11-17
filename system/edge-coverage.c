@@ -16,6 +16,8 @@
  * Example:
  *   qemu-edge-coverage-aarch64 -a 0x5fef266c -i "81 00 00 54" -f 0x40000000
  *   qemu-edge-coverage-aarch64 -a 0x5ff1b320 -i "20 00 1f d6" -r 1=0xdeadbeef
+ *   qemu-edge-coverage-arm -a 0x1001130 -i "0d 20 a0 e1" -f 0x40000000
+ *   (arm, Thumb state / IT block state via the CPSR T and IT bits in -f/-m)
  */
 
 #include "qemu/osdep.h"
@@ -83,9 +85,11 @@ static void usage(const char *argv0)
 "  -r, --reg <n>=<val>    set CPU register <n> before execution.\n"
 "                         numbering follows the gdbstub register numbering\n"
 "                         (aarch64: 0..30 = x0..x30, 31 = sp, 32 = pc,\n"
-"                          33 = pstate).  May be given multiple times.\n"
+"                          33 = pstate; arm: 0..15 = r0..r15, 15 = pc).\n"
+"                          May be given multiple times.\n"
 "  -f, --flags <val>      set the condition flags via cpsr_write()\n"
-"                         (default mask 0x%08x, i.e. NZCV)\n"
+"                         (default mask 0x%08x, i.e. NZCV; arm can also set\n"
+"                         the T and IT bits here to replay Thumb/IT state)\n"
 "  -m, --flags-mask <val> mask used for the cpsr_write() above\n"
 "  -c, --cpu <model>      CPU model to use (default: %s)\n"
 "  -o, --covrec <opts>    options passed to QEMU's -covrec\n"
@@ -319,6 +323,53 @@ static void setup_cpu_state(CPUState *cs)
 static uint64_t get_pc(CPUState *cs)
 {
     return cpu_env(cs)->pc;
+}
+
+#elif defined(TARGET_ARM)
+
+/*
+ * 32-bit ARM: gdbstub numbering of arm-core.xml (0..15 = r0..r15), the
+ * PC is r15.  Thumb state and IT-block state for the replayed instruction
+ * are installed through the CPSR T / IT bits of the -f/--flags value.
+ */
+#define PC_REGNO 15
+
+static void setup_cpu_state(CPUState *cs)
+{
+    CPUARMState *env = cpu_env(cs);
+    uint8_t buf[8];
+    int i;
+
+    for (i = 0; i < cfg.nregs; i++) {
+        stq_le_p(buf, cfg.regs[i].value);
+        if (arm_cpu_gdb_write_register(cs, buf, cfg.regs[i].regno) == 0) {
+            fatal("cannot write register %d", cfg.regs[i].regno);
+        }
+        if (cfg.verbose) {
+            fprintf(stderr, "reg[%d] = 0x%" PRIx64 "\n",
+                    cfg.regs[i].regno, cfg.regs[i].value);
+        }
+    }
+
+    if (cfg.have_flags) {
+        cpsr_write(env, cfg.flags, cfg.flags_mask, CPSRWriteByGDBStub);
+        if (cfg.verbose) {
+            fprintf(stderr, "flags = 0x%" PRIx64 " (mask 0x%" PRIx64 ")\n",
+                    cfg.flags, cfg.flags_mask);
+        }
+    }
+
+    /* the PC always wins over anything the user may have set via -r */
+    stq_le_p(buf, cfg.addr);
+    arm_cpu_gdb_write_register(cs, buf, PC_REGNO);
+
+    /* make sure the cached TB flags match the state we just installed */
+    arm_rebuild_hflags(env);
+}
+
+static uint64_t get_pc(CPUState *cs)
+{
+    return cpu_env(cs)->regs[15];
 }
 
 #else

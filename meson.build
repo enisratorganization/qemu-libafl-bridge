@@ -4306,7 +4306,7 @@ foreach target : target_dirs
     # shared/static lib for the Rust bridge, since its object would get
     # folded into the partially-linked archive and clash with the Rust
     # binary's main().
-    if target_name == 'aarch64' and 'AS_SHARED_LIB' not in config_host and 'AS_STATIC_LIB' not in config_host
+    if ['aarch64', 'arm'].contains(target_name) and 'AS_SHARED_LIB' not in config_host and 'AS_STATIC_LIB' not in config_host
       execs += [{
         'name': 'qemu-edge-coverage-' + target_name,
         'win_subsystem': 'console',
