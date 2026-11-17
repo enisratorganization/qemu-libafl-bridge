@@ -7164,6 +7164,11 @@ static bool trans_CBZ(DisasContext *s, arg_CBZ *a)
 {
     TCGv_i32 tmp = load_reg(s, a->rn);
 
+    /* EDGE COVERAGE: fold Rn to (Rn != 0) and record it as the decision,
+     * as in the aarch64 trans_CBZ; cbz taken <=> edge id 0, cbnz <=> 1 */
+    tcg_gen_setcondi_i32(TCG_COND_NE, tmp, tmp, 0);
+    arm_tcg_gen_rec_edge(s, cpu_R[15], tmp);
+
     arm_gen_condlabel(s);
     tcg_gen_brcondi_i32(a->nz ? TCG_COND_EQ : TCG_COND_NE,
                         tmp, 0, s->condlabel.label);

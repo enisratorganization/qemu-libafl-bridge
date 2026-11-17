@@ -8,9 +8,12 @@ QEMU (target/arm/tcg/translate.c) records a decision via arm_test_cc() for:
   - thumb b.cond (T16/T32 encodings, outside IT blocks), trans_B_cond_thumb
   - every instruction inside a Thumb IT block (cond from the IT state,
     arm_skip_unless() in thumb_tr_translate_insn())
-NOT recorded for arm32 (unlike AArch64): thumb cbz/cbnz (plain brcond in
-trans_CBZ) and tbb/tbh.  Indirect control flow (bx, blx reg, ldm {..., pc},
-mov pc, ...) is recorded with the register value as edge id -> ignored.
+Additionally recorded (not via arm_test_cc): thumb cbz/cbnz (edge id =
+(Rn != 0), like aarch64's trans_CBZ) and tbb/tbh with the computed
+branch target as edge id (store_reg -> arm_tcg_gen_rec_edge in
+op_tbranch).  The latter is indirect control flow like bx, blx reg,
+ldm {..., pc}, mov pc, ...: the target is not statically computable
+and is ignored here.
 
 QEMU dedups *consecutive* recordings of the same condition pair within one
 TB (arm_tcg_cc_recording_check_and_remove), but the state resets per TB, so
@@ -154,8 +157,9 @@ class ARM(ArchBase):
     @staticmethod
     def plan_runs_thumb(fapi, ins):
         """Thumb: b.cond outside IT blocks, everything inside an IT block
-        (except uncomputable control flow).  cbz/cbnz/tbb/tbh are NOT
-        recorded by QEMU for arm32 -> no runs for them."""
+        (except uncomputable control flow), and cbz/cbnz.  tbb/tbh are
+        recorded by QEMU as indirect branches (target as edge id) -> no
+        runs, like bx/br."""
         pc = ins.getAddress().getOffset()
         nxt = pc + ins.getLength()
 
@@ -178,10 +182,19 @@ class ARM(ArchBase):
                 return cond_runs(cond_k, flows[0].getOffset(), nxt, mode)
             return cond_runs(cond_k, nxt, nxt, mode)
 
-        # outside IT blocks only b.cond is recorded in Thumb
+        # outside IT blocks: b.cond and cbz/cbnz are recorded in Thumb
         m = ins.getMnemonicString().lower()
         if m.startswith("cbz") or m.startswith("cbnz"):
-            return []  # cbz/cbnz: plain brcond in QEMU's trans_CBZ, NOT recorded for arm32
+            # QEMU's edge id is (Rn != 0) (trans_CBZ setcond), like aarch64
+            taken, fall = branch_target(fapi, ins), ins.getFallThrough()
+            if taken is None or fall is None:
+                log.warning("%s %s: cbz/cbnz without static target/fallthrough, skipped",
+                            ins.getAddress(), ins)
+                return []
+            rn = insn_word(ins) & 7  # cbz/cbnz is T1 (16 bit) only
+            return [(taken if (val == 0) == m.startswith("cbz") else fall.getOffset(),
+                     "%s r%d=%d" % (m[:4], rn, val), 0, ((rn, val),), {"T": 1})
+                    for val in (0, 1)]
         ft = ins.getFlowType()
         if not ft.isConditional() or ft.isComputed():
             return []
@@ -197,4 +210,4 @@ class ARM(ArchBase):
             cond = (insn_word(ins) >> 22) & 0xF
         if cond >= 0xE:
             return []
-        return cond_runs(cond, taken, fall.getOffset())
+        return cond_runs(cond, taken, fall.getOffset(), {"T": 1})

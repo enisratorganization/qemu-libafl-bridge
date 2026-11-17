@@ -58,11 +58,13 @@ User rules:
   (bl31/tee/lk, preloaded SRAM, config area, ...) are **not in-tree** -
   copy them into `images/`; the command lines in the machine file headers
   expect them there.
-- Warning baseline: **50 warnings, 0 errors**, none of them in
+- Warning baseline: **51 warnings, 0 errors**, none of them in
   `hw/fastproto/**`, `libafl/instrument.c`, `hw/ufs/**` or the
   edge-coverage files. The only warning in a file we touch is
   `translator.c: label 'post_translate_insn' defined but not used`
-  (pre-existing, belongs to LibAFL's commented-out backdoor block). The
+  (pre-existing, belongs to LibAFL's commented-out backdoor block), plus
+  one `arm_tcg_gen_rec_edge` pointer-type warning from our `trans_CBZ`
+  call (same known class as §5, aarch64 build only). The
   rest is listed in §5.
 - Syntax-check the templates (never compiled by meson): take the
   `compile_commands.json` entry for `arm/redfin/redfin.c`, swap the file
@@ -127,7 +129,7 @@ Expected results (identical numbers = pass; also diff the timing-stripped
 - **aarch64** (e.g. an aarch64 U-Boot binary + one crash hitmap):
   28531 candidate edges, 402 -> 116 -> **54** final edges;
 - **arm** (e.g. a 32-bit ARM trustlet binary + one corpus hitmap):
-  72293 candidate edges, 1167 -> 629 -> **388** final edges, only 12 of
+  72299 candidate edges, 1167 -> 629 -> **388** final edges, only 12 of
   the 546 hitmap offsets unexplained;
 - **arm, whole corpus** (thousands of `.metadata` files, most with empty
   maps - small non-empty maps would be skipped by the >10-ints rule):
@@ -202,6 +204,18 @@ Ghidra notes:
    arm (AArch32 + Thumb/IT-state) support added, including the arm-softmmu
    tool port of `system/edge-coverage.c`.  All e2e numbers in §2.3 were
    reproduced byte-identically after each refactor round.
+5. **Thumb cbz/cbnz edge coverage.** `trans_CBZ` (arm32) now records the
+   decision like aarch64 (edge id = (Rn != 0), no coverage guard, per
+   user request); `arm.py` plans the two cbz runs (T bit set, Rn from
+   the T1 encoding) and gained a bugfix: outside-IT Thumb b.cond was
+   replayed without the T bit, so the tool decoded it in ARM state -
+   correct only for the eq/ne pair, empty for T32 (km e2e: 11
+   "expected exactly one offset" warnings gone).  tbb/tbh turned out to
+   be recorded all along (store_reg -> target as edge id, indirect like
+   bx) - docstring fixed, no code change.  Verified with the arm tool
+   (cbz/cbnz taken/fall, IT-gated cbz = 2 offsets) and the e2e: FINAL
+   lines byte-identical, candidates 72293 -> 72299 (+6 = the 3 Thumb
+   cbz insns), hit edges unchanged; aarch64 e2e unchanged.
 
 ## 5. Open ends / TODO
 
@@ -241,8 +255,8 @@ Ghidra notes:
     `PAGESZ` variables.
   - `target/arm/tcg/translate{,-a64}.c` and `accel/tcg/coverage.c` pass
     incompatible pointer types to `arm_tcg_gen_rec_edge` /
-    `tcg_gen_addi_i32` (9 warnings).  Only `--disable-werror` keeps this
-    building.
+    `tcg_gen_addi_i32` (10 warnings, incl. our `trans_CBZ` call).  Only
+    `--disable-werror` keeps this building.
   - `vmstate_ufs_hc` saves `UfsParams` as a raw buffer although it
     contains `char *serial` (a host pointer).  Harmless for in-process
     LibAFL snapshots, wrong for migration.
