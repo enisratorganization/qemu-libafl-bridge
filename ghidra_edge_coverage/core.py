@@ -7,11 +7,8 @@ outcomes continue at the next instruction (csel, conditional data
 processing, IT-gated insns, ...) the edge is (pc, pc+insn_len); both
 outcomes share that key, told apart by their label.
 
-State ("caches", module globals like in the original script):
-  HITMAP      offsets recorded by QEMU (from the .metadata files)
-  CANDIDATES  (src, dst) -> {"insn": str, "offsets": {offset: label}}  every computable edge
-  HIT_EDGES   (src, dst) -> {"insn": str, "offsets": {offset: label}}  only offsets in HITMAP
-  TOOL_CACHE  "pc|insn|nzcv|regs#mode" -> [offsets]   results of the qemu tool
+The run state lives in a Ctx object created by cli.main() and passed to
+every stage; see the Ctx docstring for the fields.
 """
 import json
 import logging
@@ -23,50 +20,47 @@ from concurrent.futures import ThreadPoolExecutor
 
 log = logging.getLogger("edgecov")
 
-# set by cli.main() after the arch is (auto-)detected
-ARCH = None
-
-HITMAP = set()
-CANDIDATES = {}
-HIT_EDGES = {}
-TOOL_CACHE = {}
-
 DEFAULT_FLAGS_MASK = 0xF0000000  # NZCV, the tool's default -m
 CACHE_VERSION = 1  # tool caches without/with another version or covrec are ignored
+TAG = "EDGECOV"
+
+
+class Ctx(object):
+    """Shared run state, created by cli.main() and passed to every stage."""
+
+    def __init__(self):
+        self.arch = None          # the detected arch module (archs/<arch>.py)
+        self.hitmap = set()       # offsets recorded by QEMU (from the .metadata files)
+        self.candidates = {}      # (src, dst) -> {"insn": str, "offsets": {offset: label}}  every computable edge
+        self.hit_edges = {}       # (src, dst) -> {"insn": str, "offsets": {offset: label}}  only offsets in the hitmap
+        self.tool_cache = {}      # "pc|insn|nzcv|regs#mode" -> [offsets]  results of the qemu tool
 
 
 # --------------------------------------------------------------------------
 # Inputs: hitmap and the qemu tool
 # --------------------------------------------------------------------------
+def find_hitmap(o, key, constrained=True):
+    """First list of >10 ints in DFS order.  While `constrained`, only
+    subtrees below a dict key matching `key` are searched (any unique
+    prefix; '' matches every key); entering such a subtree lifts the
+    constraint for everything below it."""
+    if not constrained and isinstance(o, list) \
+            and len(o) > 10 and all(isinstance(x, int) for x in o):
+        return o
+    items = o.items() if isinstance(o, dict) else enumerate(o) if isinstance(o, list) else ()
+    for k, v in items:
+        free = not constrained or (isinstance(o, dict) and (not key or str(k).startswith(key)))
+        r = find_hitmap(v, key, not free)
+        if r is not None:
+            return r
+    return None
+
+
 def load_hitmap(paths, key, edge_elems):
-    """Find `key` anywhere in each json and take the first list (>10 ints) below it
-    (key "" = accept it under any key).  Each path is a .metadata file or a
-    folder whose .metadata files are all loaded (a fuzzer corpus: every file
-    stores its hitmap under its own input-hash key)."""
-    def find_list(o):
-        if isinstance(o, list) and len(o) > 10 and all(isinstance(x, int) for x in o):
-            return o
-        for v in (o.values() if isinstance(o, dict) else o if isinstance(o, list) else ()):
-            r = find_list(v)
-            if r is not None:
-                return r
-        return None
-
-    def find_key(o):
-        if isinstance(o, dict):
-            for k, v in o.items():
-                r = find_list(v) if not key or str(k).startswith(key) else None
-                if r is None:
-                    r = find_key(v)
-                if r is not None:
-                    return r
-        elif isinstance(o, list):
-            for v in o:
-                r = find_key(v)
-                if r is not None:
-                    return r
-        return None
-
+    """Collect the hitmap list from each json: the first list (>10 ints)
+    below `key` (key "" = below any key).  Each path is a .metadata file or
+    a folder whose .metadata files are all loaded (a fuzzer corpus: every
+    file stores its hitmap under its own input-hash key)."""
     log.info("loading hitmap from %d path(s): %s", len(paths), ", ".join(paths))
     all_edges = set()  # all edge ids collected
     num_files = 0
@@ -78,7 +72,7 @@ def load_hitmap(paths, key, edge_elems):
             fnames = [path]
         for fname in fnames:
             with open(fname) as fh:
-                lst = find_key(json.load(fh))
+                lst = find_hitmap(json.load(fh), key)
             if lst is None:
                 log.info("no list (>10 ints) found under key %s in %s", key or "<any>", fname)
                 continue
@@ -89,7 +83,6 @@ def load_hitmap(paths, key, edge_elems):
         log.debug("%d hitmap offsets outside [0, %d): %s", len(bad), edge_elems, bad[:10])
     log.info("Loaded %d metadata files, total hitmap: %d offsets under key %s (fill %.2f%% of %d)",
              num_files, len(all_edges), key or "<any>", 100.0 * len(all_edges) / edge_elems, edge_elems)
-
     return all_edges
 
 
@@ -103,12 +96,12 @@ def tool_key(pc, insn_hex, nzcv, regs, mode):
                                json.dumps(mode, sort_keys=True))
 
 
-def run_tool(args, pc, insn_hex, nzcv, regs, mode):
+def run_tool(ctx, args, pc, insn_hex, nzcv, regs, mode):
     """Execute one instruction in the qemu tool, return the list of hitmap offsets."""
     key = tool_key(pc, insn_hex, nzcv, regs, mode)
-    if key in TOOL_CACHE:
-        return TOOL_CACHE[key]
-    flags, fmask = ARCH.tool_flags(nzcv, mode)
+    if key in ctx.tool_cache:
+        return ctx.tool_cache[key]
+    flags, fmask = ctx.arch.tool_flags(nzcv, mode)
     cmd = [args.tool, "-a", hex(pc), "-i", insn_hex, "-f", hex(flags), "-o", covrec(args)]
     if fmask != DEFAULT_FLAGS_MASK:
         cmd += ["-m", hex(fmask)]
@@ -118,27 +111,27 @@ def run_tool(args, pc, insn_hex, nzcv, regs, mode):
     lines = res.stdout.strip().splitlines()
     if res.returncode != 0 or not lines:
         raise RuntimeError("tool failed (%d): %s\n%s" % (res.returncode, " ".join(cmd), res.stderr))
-    TOOL_CACHE[key] = json.loads(lines[-1])["edges"]
-    log.debug("tool %s -> %s", " ".join(cmd[1:]), TOOL_CACHE[key])
-    return TOOL_CACHE[key]
+    ctx.tool_cache[key] = json.loads(lines[-1])["edges"]
+    log.debug("tool %s -> %s", " ".join(cmd[1:]), ctx.tool_cache[key])
+    return ctx.tool_cache[key]
 
 
-def load_tool_cache(args):
+def load_tool_cache(ctx, args):
     if args.tool_cache and os.path.exists(args.tool_cache):
         with open(args.tool_cache) as fh:
             data = json.load(fh)
         if data.get("cache_version") == CACHE_VERSION and data.get("covrec") == covrec(args):
-            TOOL_CACHE.update(data["entries"])
-            log.info("tool cache: %d entries from %s", len(TOOL_CACHE), args.tool_cache)
+            ctx.tool_cache.update(data["entries"])
+            log.info("tool cache: %d entries from %s", len(ctx.tool_cache), args.tool_cache)
         else:
             log.warning("tool cache %s has an incompatible format or covrec options, ignored", args.tool_cache)
 
 
-def save_tool_cache(args):
-    if args.tool_cache and TOOL_CACHE:
+def save_tool_cache(ctx, args):
+    if args.tool_cache and ctx.tool_cache:
         with open(args.tool_cache, "w") as fh:
-            json.dump({"cache_version": CACHE_VERSION, "covrec": covrec(args), "entries": TOOL_CACHE}, fh)
-        log.info("tool cache: %d entries written to %s", len(TOOL_CACHE), args.tool_cache)
+            json.dump({"cache_version": CACHE_VERSION, "covrec": covrec(args), "entries": ctx.tool_cache}, fh)
+        log.info("tool cache: %d entries written to %s", len(ctx.tool_cache), args.tool_cache)
 
 
 # --------------------------------------------------------------------------
@@ -164,11 +157,11 @@ def fmt_edge(key, info):
 # --------------------------------------------------------------------------
 # Stage 1: compute hit edges with the qemu tool
 # --------------------------------------------------------------------------
-def stage_compute(fapi, args):
+def stage_compute(ctx, fapi, args):
     plan = []  # (src, dst, label, insn text, tool job)
     n_rec = 0
     for ins in iter_code(fapi, args):
-        runs = ARCH.plan_runs(fapi, ins)
+        runs = ctx.arch.plan_runs(fapi, ins)
         if not runs:
             continue
         n_rec += 1
@@ -182,44 +175,41 @@ def stage_compute(fapi, args):
             break
 
     jobs = {tool_key(*job): job for *_, job in plan}
-    todo = [job for key, job in jobs.items() if key not in TOOL_CACHE]
+    todo = [job for key, job in jobs.items() if key not in ctx.tool_cache]
     log.info("stage compute: %d recorded insns, %d outcomes, %d tool runs (%d cached), %d jobs",
              n_rec, len(plan), len(jobs), len(jobs) - len(todo), args.jobs)
     t0 = time.time()
     try:
         with ThreadPoolExecutor(args.jobs) as ex:
-            for i, _ in enumerate(ex.map(lambda job: run_tool(args, *job), todo), 1):
+            for i, _ in enumerate(ex.map(lambda job: run_tool(ctx, args, *job), todo), 1):
                 if i % 5000 == 0:
                     log.debug("  tool runs: %d/%d (%.0fs)", i, len(todo), time.time() - t0)
     finally:
         if todo:
             log.info("  tool runs done in %.1fs", time.time() - t0)
-            save_tool_cache(args)
+            save_tool_cache(ctx, args)
 
     for src, dst, label, text, job in plan:
-        offsets = TOOL_CACHE[tool_key(*job)]
+        offsets = ctx.tool_cache[tool_key(*job)]
         if len(offsets) != 1:
             log.warning("%#x %s (%s): tool reported %s, expected exactly one offset", src, text, label, offsets)
-        cand = CANDIDATES.setdefault((src, dst), {"insn": text, "offsets": {}})
+        cand = ctx.candidates.setdefault((src, dst), {"insn": text, "offsets": {}})
         for off in offsets:
             cand["offsets"][off] = label
-    for key, cand in sorted(CANDIDATES.items()):
-        hit = {o: l for o, l in cand["offsets"].items() if o in HITMAP}
+    for key, cand in sorted(ctx.candidates.items()):
+        hit = {o: l for o, l in cand["offsets"].items() if o in ctx.hitmap}
         if hit:
-            HIT_EDGES[key] = {"insn": cand["insn"], "offsets": hit}
-            log.debug("HIT   %s", fmt_edge(key, HIT_EDGES[key]))
+            ctx.hit_edges[key] = {"insn": cand["insn"], "offsets": hit}
+            log.debug("HIT   %s", fmt_edge(key, ctx.hit_edges[key]))
 
 
 # --------------------------------------------------------------------------
 # Output
 # --------------------------------------------------------------------------
-TAG = "EDGECOV"
-
-
-def annotate(fapi, program, args):
+def annotate(ctx, fapi, program, args):
     """Pre-comment at every edge target; old EDGECOV lines in the range are replaced."""
     by_dst = defaultdict(list)
-    for key, info in sorted(HIT_EDGES.items()):
+    for key, info in sorted(ctx.hit_edges.items()):
         by_dst[key[1]].append("%s: hit from %#x" % (TAG, key[0]))
 
     tx = program.startTransaction("edge coverage comments")
@@ -247,14 +237,15 @@ def annotate(fapi, program, args):
         raise
 
 
-def summary(stage_counts):
-    explained = set().union(*(set(i["offsets"]) for i in HIT_EDGES.values())) if HIT_EDGES else set()
-    cand_offs = set().union(*(set(c["offsets"]) for c in CANDIDATES.values())) if CANDIDATES else set()
+def summary(ctx, stage_counts):
+    explained = set().union(*(set(i["offsets"]) for i in ctx.hit_edges.values())) if ctx.hit_edges else set()
+    cand_offs = set().union(*(set(c["offsets"]) for c in ctx.candidates.values())) if ctx.candidates else set()
     log.info("---- summary ----")
     for name, n in stage_counts:
         log.info("  %-24s %6d hit edges", name, n)
     log.info("  hitmap offsets: %d, explained by final edges: %d, by any candidate: %d, unexplained "
              "(indirect branches / outside range / noise): %d",
-             len(HITMAP), len(explained & HITMAP), len(cand_offs & HITMAP), len(HITMAP - cand_offs))
-    for key, info in sorted(HIT_EDGES.items()):
+             len(ctx.hitmap), len(explained & ctx.hitmap), len(cand_offs & ctx.hitmap),
+             len(ctx.hitmap - cand_offs))
+    for key, info in sorted(ctx.hit_edges.items()):
         log.debug("FINAL %s", fmt_edge(key, info))

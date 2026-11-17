@@ -95,8 +95,9 @@ def main(argv=None):
                         format="%(asctime)s %(levelname)-7s %(message)s", datefmt="%H:%M:%S")
     log = logging.getLogger("edgecov")
     log.debug("args: %s", vars(args))
-    core.HITMAP.update(core.load_hitmap(args.metadata, args.hitmap_key, args.edge_elems))
-    core.load_tool_cache(args)
+    ctx = core.Ctx()
+    ctx.hitmap.update(core.load_hitmap(args.metadata, args.hitmap_key, args.edge_elems))
+    core.load_tool_cache(ctx, args)
 
     import pyghidra
     pyghidra.start()
@@ -105,25 +106,25 @@ def main(argv=None):
     with pyghidra.open_project(os.environ["GHIDRA_PROJECT_DIR"], os.environ["GHIDRA_PROJECT_NAME"]) as project:
         with pyghidra.program_context(project, args.program) as program:
             fapi = FlatProgramAPI(program)
-            core.ARCH = get_arch(args.arch, program)
-            core.ARCH.bind(program)
+            ctx.arch = get_arch(args.arch, program)
+            ctx.arch.bind(program)
             if not args.tool:
-                args.tool = core.ARCH.TOOL
+                args.tool = ctx.arch.TOOL
             log.info("program %s (%s), arch %s, tool %s, range %s..%s",
-                     program.getName(), program.getLanguageID(), core.ARCH.NAME, args.tool,
+                     program.getName(), program.getLanguageID(), ctx.arch.NAME, args.tool,
                      hex(args.start) if args.start is not None else "min",
                      hex(args.end) if args.end is not None else "max")
             t0 = time.time()
-            core.stage_compute(fapi, args)
-            counts = [("compute", len(core.HIT_EDGES))]
+            core.stage_compute(ctx, fapi, args)
+            counts = [("compute", len(ctx.hit_edges))]
             log.info("stage compute: %d candidate edges, %d hit (%.1fs)",
-                     len(core.CANDIDATES), len(core.HIT_EDGES), time.time() - t0)
+                     len(ctx.candidates), len(ctx.hit_edges), time.time() - t0)
             for name in args.stages:
-                t0, before = time.time(), len(core.HIT_EDGES)
-                filter_stages.FILTER_STAGES[name](fapi, args)
-                counts.append((name, len(core.HIT_EDGES)))
+                t0, before = time.time(), len(ctx.hit_edges)
+                filter_stages.FILTER_STAGES[name](ctx, fapi, args)
+                counts.append((name, len(ctx.hit_edges)))
                 log.info("stage %s: %d -> %d hit edges (%.1fs)",
-                         name, before, len(core.HIT_EDGES), time.time() - t0)
-            core.summary(counts)
+                         name, before, len(ctx.hit_edges), time.time() - t0)
+            core.summary(ctx, counts)
             if args.comment:
-                core.annotate(fapi, program, args)
+                core.annotate(ctx, fapi, program, args)
